@@ -164,6 +164,12 @@ let csrrwi rd csr uimm = i_type op_system rd 5 uimm csr
 let csrrsi rd csr uimm = i_type op_system rd 6 uimm csr
 let csrrci rd csr uimm = i_type op_system rd 7 uimm csr
 
+(* custom timing instructions (opcode custom-0) *)
+let op_custom0 = 0x0B
+let delay rd rs1 = r_type op_custom0 rd 0 rs1 0 0
+let pin_wait rd rs1 rs2 = r_type op_custom0 rd 1 rs1 rs2 0
+let pin_edge rd rs1 rs2 = r_type op_custom0 rd 2 rs1 rs2 0
+
 (* machine-mode CSR addresses *)
 let csr_mstatus = 0x300
 let csr_misa = 0x301

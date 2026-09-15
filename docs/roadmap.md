@@ -131,9 +131,26 @@ RISC-V ISA test suite is a Phase 3 addition.
 
 **Goal:** Programmable I/O and precise timing, protocols in firmware.
 
-- Memory-mapped GPIO with atomic set/clear/toggle and input capture
-- `PIN_WAIT` (level/edge with timeout), `DELAY`, cycle-accurate scheduling
-- Interrupt controller: pin edges and timer compare
+Decisions: timing primitives are **custom instructions** (`DELAY`, `PIN_WAIT`,
+`PIN_EDGE`); pin-edge interrupts are **simple** (enable/pending ORed into
+`mip.MEIP`); protocols are built **UART → SPI → I2C → CAN**; CAN targets full
+low-speed operation (≤250 kbit/s) with a two-node wired-AND simulation.
+
+Sub-phases, each with its own gate:
+
+- **3a Pin subsystem** — 24-pin GPIO: output value, output-enable, input,
+  atomic set/clear/toggle, latched rising/falling edges, per-pin IRQ enable
+  and pending. Gate: directed pin tests.
+- **3b Timing ISA** — `DELAY`, `PIN_WAIT`, `PIN_EDGE` as custom instructions
+  with a small stall mechanism. Gate: cycle-exact timing tests.
+- **3c Interrupts** — pin-edge interrupts into `mip.MEIP`. Gate: IRQ test.
+- **3d UART firmware** — TX (exists) + RX, against a golden model.
+- **3e SPI firmware** — master, all modes, loopback vs golden model.
+- **3f I2C firmware** — master with open-drain, START/STOP, ACK, clock
+  stretching, vs golden model.
+- **3g CAN firmware** — low-speed CAN with arbitration, bit stuffing, CRC-15
+  and ACK, verified with two nodes on a wired-AND bus.
+- **3h Verification** — golden models, timing assertions, full regression.
 
 **Exit:** UART, SPI, I2C **and low-speed CAN (≤250 kbit/s)** are implemented
 **in firmware** and pass loopback tests against OCaml golden models.
@@ -141,6 +158,8 @@ RISC-V ISA test suite is a Phase 3 addition.
 **Verification:** protocol golden models; timing-accuracy assertions. CAN is
 verified against a two-node simulation with a wired-AND bus model, which
 exercises arbitration and bit stuffing.
+
+**Board:** Phase 3 is simulation-only; no FPGA required.
 
 ### Phase 4 — The Watcher (JTAG)
 

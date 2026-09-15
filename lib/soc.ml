@@ -27,6 +27,7 @@ module I = struct
     { clock : 'a
     ; reset : 'a
     ; ui_in : 'a [@bits 8]
+    ; uio_in : 'a [@bits 8]
     ; uart_rx : 'a
     ; dbg_addr : 'a [@bits 32]
     }
@@ -36,6 +37,8 @@ end
 module O = struct
   type 'a t =
     { uo_out : 'a [@bits 8]
+    ; uio_out : 'a [@bits 8]
+    ; uio_oe : 'a [@bits 8]
     ; halted : 'a
     ; pc : 'a [@bits 32]
     ; trap : 'a
@@ -58,8 +61,10 @@ let create ?(boot = false) ~(program : int array) (i : Signal.t I.t) : Signal.t 
   let imem_reg_spec = Reg_spec.create ~clock:i.clock () in
   let imem_rdata_w = Signal.wire 32 in
   let dmem_rdata_w = Signal.wire 32 in
+  let pins_in_wire = Signal.wire 24 in
   let halt_wire = Signal.wire 1 in
   let irq_timer_wire = Signal.wire 1 in
+  let irq_ext_wire = Signal.wire 1 in
   let boot_wr_en_w = Signal.wire 1 in
   let boot_wr_addr_w = Signal.wire 16 in
   let boot_wr_data_w = Signal.wire 32 in
@@ -72,9 +77,10 @@ let create ?(boot = false) ~(program : int array) (i : Signal.t I.t) : Signal.t 
     ; reset = cpu_reset
     ; imem_rdata = imem_rdata_w
     ; dmem_rdata = dmem_rdata_w
+    ; pins_in = pins_in_wire
     ; irq_sw = Signal.gnd
     ; irq_timer = irq_timer_wire
-    ; irq_ext = Signal.gnd
+    ; irq_ext = irq_ext_wire
     ; halt_req = halt_wire
     }
   in
@@ -129,13 +135,33 @@ let create ?(boot = false) ~(program : int array) (i : Signal.t I.t) : Signal.t 
     Signal.mux (Signal.select addr (2 + rabits - 1) 2) (Array.to_list ram_words)
   in
   let ram_rdata = ram_read dmem_addr in
-  (* GPIO output register *)
-  let gpio_sel = Signal.select dmem_addr 31 28 ==:. 0x2 in
-  let gpio_we = cpu.Cpu.O.dmem_we &: gpio_sel in
-  let gpio_out =
-    Signal.reg_fb reg_spec ~width:8 ~enable:gpio_we ~f:(fun _ ->
-      Signal.select cpu.Cpu.O.dmem_wdata 7 0)
+  (* pin subsystem *)
+  let out_w = Signal.wire 24 in
+  let oe_w = Signal.wire 24 in
+  let uio_out = Signal.select out_w 23 16 in
+  let uio_oe = Signal.select oe_w 23 16 in
+  (* a uio pin reads its driven value when the output is enabled, else the
+     external level *)
+  let uio_actual = (uio_out &: uio_oe) |: (i.uio_in &: ~:uio_oe) in
+  let pin_in =
+    Signal.concat_msb [ uio_actual; i.ui_in; Signal.select out_w 7 0 ]
   in
+  Signal.assign pins_in_wire pin_in;
+  let pins_sel = Signal.select dmem_addr 31 28 ==:. 0x2 in
+  let pins =
+    Pins.create
+      { clock = i.clock
+      ; reset = i.reset
+      ; sel = pins_sel
+      ; we = cpu.Cpu.O.dmem_we
+      ; addr = Signal.select dmem_addr 5 2
+      ; wdata = cpu.Cpu.O.dmem_wdata
+      ; pin_in
+      }
+  in
+  Signal.assign out_w pins.Pins.O.out;
+  Signal.assign oe_w pins.Pins.O.oe;
+  Signal.assign irq_ext_wire pins.Pins.O.irq;
   (* machine timer *)
   let timer_sel = Signal.select dmem_addr 31 28 ==:. 0x3 in
   let timer =
@@ -192,14 +218,16 @@ let create ?(boot = false) ~(program : int array) (i : Signal.t I.t) : Signal.t 
          (Signal.mux2
             timer_sel
             timer.Timer.O.rdata
-            (Signal.mux2 gpio_sel (Signal.uresize gpio_out 32) ram_rdata)))
+            (Signal.mux2 pins_sel pins.Pins.O.rdata ram_rdata)))
   in
   (* HALT register: a store anywhere in the 0x7 region halts the core *)
   let halt_sel = Signal.select dmem_addr 31 28 ==:. 0x7 in
   Signal.assign halt_wire (cpu.Cpu.O.dmem_we &: halt_sel);
   Signal.assign imem_rdata_w imem_rdata;
   Signal.assign dmem_rdata_w dmem_rdata;
-  { O.uo_out = gpio_out
+  { O.uo_out = Signal.select pins.Pins.O.out 7 0
+  ; uio_out = Signal.select pins.Pins.O.out 23 16
+  ; uio_oe = Signal.select pins.Pins.O.oe 23 16
   ; halted = cpu.Cpu.O.halted
   ; pc
   ; trap = cpu.Cpu.O.trap

@@ -21,6 +21,7 @@ module I = struct
     ; reset : 'a
     ; imem_rdata : 'a [@bits 32]
     ; dmem_rdata : 'a [@bits 32]
+    ; pins_in : 'a [@bits 24]
     ; irq_sw : 'a
     ; irq_timer : 'a
     ; irq_ext : 'a
@@ -106,6 +107,12 @@ let create (i : Signal.t I.t) : Signal.t O.t =
   let csr_rs = (funct3 ==:. 2) |: (funct3 ==:. 6) in
   let csr_rc = (funct3 ==:. 3) |: (funct3 ==:. 7) in
   let csr_imm = (funct3 ==:. 5) |: (funct3 ==:. 6) |: (funct3 ==:. 7) in
+  (* custom timing instructions (opcode custom-0) *)
+  let is_custom = opcode ==:. 0x0B in
+  let is_delay = is_custom &: (funct3 ==:. 0) in
+  let is_pin_wait = is_custom &: (funct3 ==:. 1) in
+  let is_pin_edge = is_custom &: (funct3 ==:. 2) in
+  let is_wait = is_delay |: is_pin_wait |: is_pin_edge in
   (* legality *)
   let f3_in ns = List.fold_left (fun acc n -> acc |: (funct3 ==:. n)) Signal.gnd ns in
   let reg_ok =
@@ -122,6 +129,7 @@ let create (i : Signal.t I.t) : Signal.t O.t =
     |: (is_reg &: reg_ok)
     |: ((funct3 ==:. 0) &: is_system &: (is_ecall |: is_ebreak |: is_mret |: is_wfi))
     |: (is_system &: f3_in [ 1; 2; 3; 5; 6; 7 ])
+    |: is_wait
   in
   let illegal = ~:legal in
   (* exceptions *)
@@ -208,6 +216,40 @@ let create (i : Signal.t I.t) : Signal.t O.t =
       ; rs1_data >=: rs2_data
       ]
   in
+  (* custom timing instructions: DELAY / PIN_WAIT / PIN_EDGE.
+     These stall the core until a condition is met or a timeout expires. *)
+  let pin_mask = Signal.select rs1_data 23 0 in
+  let pins = i.pins_in in
+  let prev_pins = Signal.reg_fb reg_spec ~width:24 ~f:(fun _ -> pins) in
+  let level_cond = (pins &: pin_mask) <>:. 0 in
+  let edge_cond = ((pins &: pin_mask) &: ~:(prev_pins &: pin_mask)) <>:. 0 in
+  let cond =
+    Signal.mux2 is_delay Signal.gnd (Signal.mux2 is_pin_wait level_cond edge_cond)
+  in
+  let timeout_val = Signal.mux2 is_delay rs1_data rs2_data in
+  let busy_wire = Signal.wire 1 in
+  let count_wire = Signal.wire 32 in
+  let first = is_wait &: ~:busy_wire in
+  let count_zero = count_wire ==:. 0 in
+  let active = is_wait |: busy_wire in
+  let retire_wait = active &: (cond |: (busy_wire &: count_zero)) in
+  let stall = active &: ~:retire_wait in
+  let count_next =
+    Signal.mux2
+      (first &: ~:cond)
+      timeout_val
+      (Signal.mux2
+         (busy_wire &: ~:cond &: ~:count_zero)
+         (count_wire -:. 1)
+         count_wire)
+  in
+  let busy = Signal.reg_fb reg_spec ~width:1 ~f:(fun _ -> stall) in
+  let count = Signal.reg_fb reg_spec ~width:32 ~f:(fun _ -> count_next) in
+  Signal.assign busy_wire busy;
+  Signal.assign count_wire count;
+  let wait_rd =
+    Signal.mux2 is_delay (Signal.zero 32) (Signal.mux2 cond (Signal.zero 32) (c 1))
+  in
   (* program counter and control-flow target *)
   let pc_wire = Signal.wire 32 in
   let mepc_wire = Signal.wire 32 in
@@ -236,7 +278,7 @@ let create (i : Signal.t I.t) : Signal.t O.t =
     ; op = Signal.mux2 csr_rw (c2 0) (Signal.mux2 csr_rs (c2 1) (c2 2))
     ; src = Signal.mux2 csr_imm (Signal.uresize rs1 32) rs1_data
     ; wr = is_csr &: (csr_rw |: ((csr_rs |: csr_rc) &: (rs1 <>:. 0)))
-    ; retire = ~:illegal &: ~:halted
+    ; retire = ~:illegal &: ~:halted &: ~:stall
     ; trap = trap_wire
     ; trap_cause = trap_cause_wire
     ; trap_pc = trap_pc_wire
@@ -248,12 +290,12 @@ let create (i : Signal.t I.t) : Signal.t O.t =
     }
   in
   let csr = Csr.create csr_i in
-  let interrupt_taken = csr.Csr.O.interrupt &: ~:exception_ in
+  let interrupt_taken = csr.Csr.O.interrupt &: ~:exception_ &: ~:stall in
   let trap_taken = exception_ |: interrupt_taken in
   let pc =
     Signal.reg_fb reg_spec ~width:32 ~f:(fun _ ->
       Signal.mux2
-        halted
+        (halted |: stall)
         pc_wire
         (Signal.mux2
            is_mret
@@ -331,14 +373,18 @@ let create (i : Signal.t I.t) : Signal.t O.t =
     Signal.mux2
       is_load
       load_data
-      (Signal.mux2 link pc4 (Signal.mux2 is_csr csr.Csr.O.rdata alu_result))
+      (Signal.mux2
+         is_wait
+         wait_rd
+         (Signal.mux2 link pc4 (Signal.mux2 is_csr csr.Csr.O.rdata alu_result)))
   in
   let reg_write =
     is_reg |: is_imm |: is_load |: is_lui |: is_auipc |: is_jal |: is_jalr |: is_csr
+    |: is_wait
   in
   Signal.assign wdata_wire wb_data;
-  Signal.assign we_wire (reg_write &: ~:halted &: ~:exception_);
-  let dmem_we = is_store &: ~:halted &: ~:exception_ in
+  Signal.assign we_wire (reg_write &: ~:halted &: ~:exception_ &: ~:stall);
+  let dmem_we = is_store &: ~:halted &: ~:exception_ &: ~:stall in
   { O.imem_addr = pc_wire
   ; dmem_addr = alu_result
   ; dmem_wdata = store_data
