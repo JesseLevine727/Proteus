@@ -17,18 +17,19 @@ timing.
 
 ### 2.1 Base ISA
 
-- **RV32I** integer base, implemented incrementally (Phase 1 subset → Phase 2
-  complete).
-- Register file: **16 registers (RV32E)** as the area baseline; the decode and
-  register file are parameterised so we can widen to 32 if area allows.
+- **RV32I** integer base — **implemented in Phase 1** (see
+  [`isa.md`](isa.md) for the authoritative list).
+- Register file: **32 registers** in the Phase 1 core. RV32E (16 registers) is
+  a possible area optimisation once the Phase 5 synthesis report is available.
 - No M extension initially; multiply/divide are added only if firmware needs
   them (most protocols are shifts, masks and compares).
 - Little-endian, byte-addressable memory.
+- CSRs, traps and interrupts are **not yet implemented** (Phase 2).
 
-### 2.2 Protocol-oriented extensions
+### 2.2 Protocol-oriented extensions (Phase 3)
 
 Custom instructions use RISC-V custom opcodes and are added only where they
-remove a real bottleneck.
+remove a real bottleneck. **None are implemented yet.**
 
 | Instruction | Purpose |
 |---|---|

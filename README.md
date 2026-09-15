@@ -59,10 +59,9 @@ switch pinned to OCaml 5.3.0.
 opam switch create . ocaml-base-compiler.5.3.0   # first time only
 eval $(opam env --switch=. --set-switch)
 
-dune build                                        # build
-dune runtest                                      # run all tests
-dune exec test/test_uart_fw.exe                   # Phase 1 exit test
-dune exec bin/generate_verilog.exe                # emit rtl/*.v
+make test          # build and run all tests
+make verilog       # emit rtl/*.v
+make lint          # Verilator lint of the generated Verilog
 ```
 
 Expected Phase 1 exit test output:
@@ -128,3 +127,7 @@ Every phase must boot, execute its tests and pass regressions before the next
 architectural feature is introduced. Verification evidence is a first-class
 deliverable, not a cleanup step — the competition explicitly rewards novel
 verification methodology.
+
+## License
+
+Apache-2.0. See [`LICENSE`](LICENSE).

@@ -166,6 +166,70 @@ let () =
   in
   check "lui" (mem ram) 0x12345000;
   check "auipc" (mem (ram + 4)) 12;
+  (* immediate ALU operations *)
+  let mem =
+    run
+      (Asm.assemble
+         [ i (lui s0 0x10000000)
+         ; i (addi t0 x0 0x1F)
+         ; i (slti t2 t0 0x20); i (sw t2 s0 0)
+         ; i (sltiu t2 t0 0x20); i (sw t2 s0 4)
+         ; i (xori t2 t0 0xFF); i (sw t2 s0 8)
+         ; i (ori t2 t0 0x100); i (sw t2 s0 12)
+         ; i (andi t2 t0 0x0F); i (sw t2 s0 16)
+         ; i (slli t2 t0 2); i (sw t2 s0 20)
+         ; i (srli t2 t0 1); i (sw t2 s0 24)
+         ; i (srai t2 t0 1); i (sw t2 s0 28)
+         ; i (addi t2 x0 (-16))
+         ; i (srai s1 t2 2); i (sw s1 s0 32)
+         ; i ebreak
+         ])
+  in
+  check "slti" (mem ram) 1;
+  check "sltiu" (mem (ram + 4)) 1;
+  check "xori" (mem (ram + 8)) 224;
+  check "ori" (mem (ram + 12)) 287;
+  check "andi" (mem (ram + 16)) 15;
+  check "slli" (mem (ram + 20)) 124;
+  check "srli" (mem (ram + 24)) 15;
+  check "srai" (mem (ram + 28)) 15;
+  check "srai_neg" (mem (ram + 32)) 0xFFFFFFFC;
+  (* unsigned branches *)
+  let mem =
+    run
+      (Asm.assemble
+         [ i (lui s0 0x10000000)
+         ; i (addi t0 x0 (-1))
+         ; i (addi t1 x0 1)
+         ; Asm.Branch ((fun off -> bltu t1 t0 off), "U1")
+         ; i (addi t2 x0 0xBAD)
+         ; Asm.Label "U1"
+         ; i (addi t2 x0 1); i (sw t2 s0 0)
+         ; Asm.Branch ((fun off -> bgeu t0 t1 off), "U2")
+         ; i (addi t2 x0 0xBAD)
+         ; Asm.Label "U2"
+         ; i (addi t2 x0 2); i (sw t2 s0 4)
+         ; i ebreak
+         ])
+  in
+  check "bltu" (mem ram) 1;
+  check "bgeu" (mem (ram + 4)) 2;
+  (* JALR with an immediate offset and link *)
+  let mem =
+    run
+      (Asm.assemble
+         [ i (lui s0 0x10000000)
+         ; i (auipc t0 0) (* t0 = 4 *)
+         ; i (addi t0 t0 8) (* t0 = 12 *)
+         ; i (jalr t1 t0 4) (* target = 16, t1 = 16 *)
+         ; i (addi t2 x0 1)
+         ; i (sw t2 s0 0)
+         ; i (sw t1 s0 4)
+         ; i ebreak
+         ])
+  in
+  check "jalr_target" (mem ram) 1;
+  check "jalr_link" (mem (ram + 4)) 16;
   if !failures = 0
   then Printf.printf "CPU directed tests PASSED\n"
   else (
