@@ -102,18 +102,30 @@ model. *(complete)*
 load-store semantics) plus the firmware UART exit test, all in
 cycle-accurate simulation. Generated Verilog is Verilator-lint clean.
 
-### Phase 2 — Voice
+### Phase 2 — Voice ✓
 
 **Goal:** A complete CPU and a real firmware toolchain.
 
-- Full RV32I(-E) datapath, branches/jumps, loads/stores, CSRs
-- `mcycle`/`minstret` counters, traps and interrupts
-- RISC-V GCC/clang assembles firmware; a bootloader loads code over UART
+- Full RV32I base plus the **Zicsr** CSR instructions and machine traps
+  (illegal instruction, ECALL, EBREAK) with MRET (`lib/csr.ml`, `lib/cpu.ml`)
+- `mcycle`/`mcycleh`, `minstret`/`minstreth`, `mstatus`, `mtvec`, `mepc`,
+  `mcause`, `mtval`, `mscratch`, `mie`, `mip`, `misa` and the id registers
+- Machine software/timer/external interrupts; a memory-mapped
+  `mtime`/`mtimecmp` timer drives the timer interrupt (`lib/timer.ml`)
+- A memory-mapped **debug UART** (8N1, TX + RX) at `0x6000_0000`
+  (`lib/uart.ml`), used for the console and the boot channel
+- A **hardware bootloader** (`lib/bootloader.ml`) that holds the CPU in reset,
+  streams a program image into the writable instruction RAM, then releases it
+- RISC-V `riscv32-unknown-elf-gcc` toolchain: linker script, C startup, and a
+  C firmware that prints over the UART (`firmware/`)
 
-**Exit:** compiled C prints over UART in simulation and the same image is
-loaded by the bootloader.
+**Exit:** compiled C prints `Hello from Proteus C!` over the UART in
+simulation, both when loaded directly and when streamed in through the
+bootloader. *(complete)*
 
-**Verification:** RISC-V ISA test vectors; bootloader protocol tests.
+**Verification:** directed CSR/trap tests, a timer-interrupt test, UART TX/RX
+tests, a bootloader test, and the C firmware test (direct + booted). The full
+RISC-V ISA test suite is a Phase 3 addition.
 
 ### Phase 3 — Reflexes
 

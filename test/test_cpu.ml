@@ -15,6 +15,7 @@ let run program =
   let (inputs : Bits.t ref Soc.I.t) = Cyclesim.inputs sim in
   let (outputs : Bits.t ref Soc.O.t) = Cyclesim.outputs sim in
   inputs.ui_in := Bits.of_int ~width:8 0;
+  inputs.uart_rx := Bits.vdd;
   inputs.dbg_addr := Bits.of_int ~width:32 0;
   inputs.reset := Bits.vdd;
   Cyclesim.cycle sim;

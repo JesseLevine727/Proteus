@@ -98,6 +98,12 @@ let a2 = 12
 let a3 = 13
 let a4 = 14
 let a5 = 15
+let a6 = 16
+let a7 = 17
+let t3 = 28
+let t4 = 29
+let t5 = 30
+let t6 = 31
 
 (* U-type *)
 let lui rd imm = u_type op_lui rd imm

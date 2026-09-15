@@ -64,6 +64,9 @@ let create (i : Signal.t I.t) : Signal.t O.t =
   let reg_spec = Reg_spec.create ~clock:i.clock ~clear:i.reset () in
   let c v = Signal.of_int ~width:32 v in
   let bit s n = Signal.select s n n in
+  (* a 32-bit value with bit [n] = b. Note [Signal.sll] preserves width, so
+     shifting a 1-bit signal does not work here. *)
+  let bit_at n b = Signal.concat_msb [ Signal.zero (31 - n); b; Signal.zero n ] in
   (* the value a CSR instruction would write, given the current value *)
   let csr_op cur =
     Signal.mux i.op [ i.src; cur |: i.src; cur &: ~:(i.src); Signal.zero 32 ]
@@ -76,16 +79,8 @@ let create (i : Signal.t I.t) : Signal.t O.t =
     Signal.reg_fb reg_spec ~width:32 ~f:(fun cur ->
       let mie = bit cur 3 in
       let mpie = bit cur 7 in
-      let trap_v =
-        (cur &: c 0xFFFFE777)
-        |: Signal.uresize (Signal.sll mie 7) 32
-        |: c 0x1800
-      in
-      let mret_v =
-        (cur &: c 0xFFFFE777)
-        |: Signal.uresize (Signal.sll mpie 3) 32
-        |: c 0x80
-      in
+      let trap_v = (cur &: c 0xFFFFE777) |: bit_at 7 mie |: c 0x1800 in
+      let mret_v = (cur &: c 0xFFFFE777) |: bit_at 3 mpie |: c 0x80 in
       Signal.mux2 i.trap trap_v (Signal.mux2 i.mret mret_v (wr_reg cur addr_mstatus)))
   in
   let mie = Signal.reg_fb reg_spec ~width:32 ~f:(fun cur -> wr_reg cur addr_mie) in
@@ -106,11 +101,7 @@ let create (i : Signal.t I.t) : Signal.t O.t =
       Signal.mux2 i.trap i.trap_val (wr_reg cur addr_mtval))
   in
   (* mip reflects the hardware interrupt inputs *)
-  let mip =
-    Signal.uresize (Signal.sll i.irq_sw 3) 32
-    |: Signal.uresize (Signal.sll i.irq_timer 7) 32
-    |: Signal.uresize (Signal.sll i.irq_ext 11) 32
-  in
+  let mip = bit_at 3 i.irq_sw |: bit_at 7 i.irq_timer |: bit_at 11 i.irq_ext in
   (* counters *)
   let mcycle = Signal.reg_fb reg_spec ~width:64 ~f:(fun cy -> cy +:. 1) in
   let minstret =

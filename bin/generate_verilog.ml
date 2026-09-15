@@ -18,8 +18,10 @@ let () =
   in
   let module Uart_tx_circuit = Circuit.With_interface (Uart_tx.I) (Uart_tx.O) in
   write (Uart_tx_circuit.create_exn ~name:"uart_tx" Uart_tx.create);
-  (* Phase 1 SoC running the bit-banged UART firmware image *)
+  (* Phase 2 SoC running the compiled C firmware image *)
   let module Soc_circuit = Circuit.With_interface (Soc.I) (Soc.O) in
-  let program = Firmware.uart_tx ~byte:0xA5 ~delay:12 () in
-  write (Soc_circuit.create_exn ~name:"proteus_soc" (Soc.create ~program))
+  write
+    (Soc_circuit.create_exn
+       ~name:"proteus_soc"
+       (Soc.create ~program:C_firmware.hello))
 ;;

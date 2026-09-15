@@ -5,7 +5,7 @@
 
 VERILATOR ?= verilator
 
-.PHONY: all build test verilog lint clean
+.PHONY: all build test verilog lint firmware clean
 
 all: build
 
@@ -14,6 +14,10 @@ build:
 
 test:
 	dune runtest
+
+# Requires riscv32-unknown-elf-gcc (e.g. on PATH or RISCV_CC set).
+firmware:
+	cd firmware && ./build.sh
 
 verilog:
 	dune exec bin/generate_verilog.exe

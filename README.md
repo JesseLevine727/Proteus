@@ -37,16 +37,21 @@ all firmware; full-rate Ethernet and CAN get area-gated hardware assist.
 
 ## Current status
 
-**Phase 1 complete — First Light.**
+**Phase 2 complete — Voice.**
 
-A custom RV32I micro-core (`lib/cpu.ml`) executes firmware from a
-combinational instruction ROM. The firmware bit-bangs a complete 8N1 UART
-frame out of a GPIO pin, and the simulator decodes the byte back and checks
-the timing against the model — no protocol hardware involved.
+The core now implements the full RV32I base plus the Zicsr CSR instructions
+and machine-mode traps (illegal instruction, ECALL, EBREAK) with MRET, and
+machine software/timer/external interrupts. Around it sit a writable
+instruction RAM, a data RAM, GPIO, a machine timer, a debug UART and a
+hardware bootloader.
 
-Implemented so far: full RV32I base, a two-pass assembler, a 64-word
-byte-writable data RAM, memory-mapped GPIO, and directed CPU + firmware
-tests. Generated Verilog is Verilator-lint clean.
+The Phase 2 exit gate is met: **compiled C firmware prints over the UART**,
+both when loaded directly and when streamed in through the bootloader, using
+the `riscv32-unknown-elf-gcc` toolchain in `firmware/`.
+
+Implemented so far: RV32I + Zicsr + traps, `mcycle`/`minstret`, interrupts, a
+two-pass assembler, a C toolchain with linker script and startup, and a
+self-checking test suite. Generated Verilog is Verilator-lint clean.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the phased plan,
 [`docs/architecture.md`](docs/architecture.md) for the architecture,
@@ -63,6 +68,7 @@ opam switch create . ocaml-base-compiler.5.3.0   # first time only
 eval $(opam env --switch=. --set-switch)
 
 make test          # build and run all tests
+make firmware      # build firmware/ with riscv32-unknown-elf-gcc
 make verilog       # emit rtl/*.v
 make lint          # Verilator lint of the generated Verilog
 ```
@@ -82,17 +88,27 @@ UART firmware test PASSED
 │   ├── isa.ml           #   opcodes, encoders, instruction helpers
 │   ├── alu.ml           #   RV32I ALU
 │   ├── regfile.ml       #   32x32 register file
-│   ├── cpu.ml           #   single-cycle RV32I core
-│   ├── soc.ml           #   instruction ROM, data RAM, GPIO
+│   ├── cpu.ml           #   single-cycle RV32I + Zicsr + traps core
+│   ├── csr.ml           #   machine-mode CSRs, traps, interrupts
+│   ├── soc.ml           #   instruction RAM, data RAM, GPIO, timer, UART
+│   ├── timer.ml         #   mtime/mtimecmp machine timer
+│   ├── uart.ml          #   memory-mapped debug UART (8N1)
+│   ├── bootloader.ml    #   hardwired serial bootloader
 │   ├── asm.ml           #   two-pass assembler
-│   ├── firmware.ml      #   firmware images (bit-banged UART)
+│   ├── firmware.ml      #   hand-assembled firmware images
+│   ├── c_firmware.ml    #   generated: compiled C image
 │   └── uart_tx.ml       #   Phase 0 standalone design
+├── firmware/            # C toolchain (link.ld, crt0.S, main.c, build.sh)
 ├── bin/
 │   └── generate_verilog.ml
-├── test/
-│   ├── test_cpu.ml      #   directed RV32I tests
-│   ├── test_uart_fw.ml  #   Phase 1 exit test (firmware UART)
-│   └── test_uart_tx.ml
+├── test/                # self-checking simulations
+│   ├── test_cpu.ml
+│   ├── test_csr.ml
+│   ├── test_timer.ml
+│   ├── test_uart_periph.ml
+│   ├── test_bootloader.ml
+│   ├── test_c_firmware.ml
+│   └── ...
 ├── rtl/                 # generated Verilog (synthesizable)
 └── docs/
     ├── roadmap.md       # phased plan with exit gates
@@ -107,7 +123,7 @@ UART firmware test PASSED
 |---|---|
 | 0. Foundations ✓ | Toolchain + first verified design |
 | 1. First Light | Minimal core drives a pin from firmware |
-| 2. Voice | Full CPU + firmware toolchain + bootloader |
+| 2. Voice ✓ | Full CPU + CSRs/traps + UART + bootloader + C toolchain |
 | 3. Reflexes | UART/SPI/I2C in firmware, precise timing |
 | 4. The Watcher | JTAG (TAP target and/or host) |
 | 5. Conduits | Shift/FIFO/DMA/CRC + early synthesis checkpoint |

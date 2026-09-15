@@ -24,7 +24,9 @@ timing.
 - No M extension initially; multiply/divide are added only if firmware needs
   them (most protocols are shifts, masks and compares).
 - Little-endian, byte-addressable memory.
-- CSRs, traps and interrupts are **not yet implemented** (Phase 2).
+- **Zicsr** CSR instructions and machine-mode traps (illegal instruction,
+  ECALL, EBREAK) with MRET are **implemented** (Phase 2); so are machine
+  software/timer/external interrupts. See [`isa.md`](isa.md).
 
 ### 2.2 Protocol-oriented extensions (Phase 3)
 
@@ -41,27 +43,30 @@ Baseline GPIO reads/writes stay **memory-mapped** so the common case needs no
 new opcodes. Accelerator access (shift engine, FIFO, DMA, CRC) is also
 memory-mapped.
 
-### 2.3 CSRs and interrupts
+### 2.3 CSRs and interrupts ✓ (Phase 2)
 
-- `mcycle` / `mcycleh` — free-running cycle counter for measurement and timing
-- `minstret` — retired instruction counter
-- Fast interrupt entry with a small vector table; sources are pin edges and
-  timer compares
+- `mcycle`/`mcycleh` and `minstret`/`minstreth` — 64-bit counters
+- `mstatus`, `mtvec`, `mepc`, `mcause`, `mtval`, `mscratch`, `mie`, `mip`,
+  `misa` and read-only id registers
+- Direct-mode trap vector; machine software/timer/external interrupts, with
+  the timer driven by a memory-mapped `mtime`/`mtimecmp` (`lib/timer.ml`)
+- Fast, single-cycle interrupt entry (no pipeline to flush)
 
-## 3. Memory map (proposed)
+## 3. Memory map
 
-| Region | Base | Size | Notes |
+| Region | Base | Implemented | Notes |
 |---|---|---|---|
-| Instruction SRAM | `0x0000_0000` | 4 KiB | Loaded at boot |
-| Data SRAM | `0x1000_0000` | 2 KiB | Stack + buffers |
-| GPIO | `0x2000_0000` | 4 KiB | set / clear / toggle / read / capture |
-| Timers & dividers | `0x3000_0000` | 4 KiB | compare + baud/symbol generators |
-| Interrupt controller | `0x4000_0000` | 4 KiB | enable / pending / ack |
-| Accelerators | `0x5000_0000` | 16 KiB | shift / FIFO / DMA / CRC (Phase 5+) |
-| CAN controller | `0x5800_0000` | 4 KiB | CAN 2.0B registers (Phase 6) |
-| UART (debug) | `0x6000_0000` | 4 KiB | firmware console |
+| Instruction RAM | `0x0000_0000` | ✓ (256 words) | writable by the bootloader; also readable on the data bus so firmware can copy initialised data |
+| Data RAM | `0x1000_0000` | ✓ (64 words) | byte-writable |
+| GPIO | `0x2000_0000` | ✓ | 8-bit output register |
+| Machine timer | `0x3000_0000` | ✓ | `mtime` / `mtimecmp` |
+| Interrupt controller | `0x4000_0000` | — | pin-edge sources (Phase 3) |
+| Accelerators | `0x5000_0000` | — | shift / FIFO / DMA / CRC (Phase 5) |
+| CAN controller | `0x5800_0000` | — | CAN 2.0B registers (Phase 6) |
+| UART (debug) | `0x6000_0000` | ✓ | 8N1 console + boot channel |
+| HALT | `0x7000_0000` | ✓ | write-only; freezes the core |
 
-Exact sizes are provisional; the goal is a clean, decodable map with room for
+Sizes are provisional; the goal is a clean, decodable map with room for
 accelerators to appear in later phases without disturbing earlier addresses.
 
 ## 4. I/O subsystem
@@ -107,11 +112,15 @@ wired-AND bus model, which exercises arbitration and bit stuffing.
 An ASIC has no way to preload SRAM, so Proteus boots by loading a program at
 run time.
 
-- A small hardwired **serial bootloader** shifts a program image in over a
-  dedicated pin pair (or reuses a protocol port) after reset.
-- When the image is complete and verified (length + checksum), the core is
-  released from reset.
-- A debug UART provides a second loading and console path.
+- A hardwired **serial bootloader** (`lib/bootloader.ml`) holds the CPU in
+  reset and consumes a program image from the debug UART, writing it into the
+  instruction RAM. Wire format: a 4-byte big-endian word count followed by
+  that many big-endian 32-bit words.
+- When the image is complete the bootloader raises `done_` and the core is
+  released from reset at PC 0.
+- The same image can be loaded directly (for tests) or streamed in through
+  the bootloader; `test/test_c_firmware.ml` checks both.
+- A checksum and richer framing are future work.
 
 ## 7. Clocking and reset
 
