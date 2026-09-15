@@ -1,13 +1,16 @@
-(* Proteus RV32I core.
+(* Proteus RV32I core (Phase 2).
 
-   Phase 1 microarchitecture: single cycle, combinational instruction fetch
-   (the instruction memory lives in [Soc] and is read combinationally) and a
-   synchronous register file. Every instruction retires in one cycle, which
-   makes firmware timing deterministic and easy to verify.
+   Microarchitecture: single cycle, combinational instruction fetch (the
+   instruction memory lives in [Soc]) and a synchronous register file. Every
+   instruction retires in one cycle, which makes firmware timing deterministic
+   and easy to verify.
 
-   Implemented: the full RV32I base integer instruction set. EBREAK halts the
-   core (used to terminate firmware in simulation). CSRs, traps and the
-   protocol-oriented custom instructions arrive in later phases. *)
+   Implemented: the full RV32I base integer instruction set, the Zicsr CSR
+   instructions, machine-mode traps (illegal instruction, ECALL, EBREAK) and
+   MRET, and machine software/timer/external interrupts.
+
+   Termination: rather than overloading EBREAK (which now traps), the SoC
+   asserts [halt_req] on a store to the HALT register; the core then freezes. *)
 
 open Hardcaml
 open Signal
@@ -18,6 +21,10 @@ module I = struct
     ; reset : 'a
     ; imem_rdata : 'a [@bits 32]
     ; dmem_rdata : 'a [@bits 32]
+    ; irq_sw : 'a
+    ; irq_timer : 'a
+    ; irq_ext : 'a
+    ; halt_req : 'a
     }
   [@@deriving hardcaml]
 end
@@ -32,12 +39,15 @@ module O = struct
     ; dmem_re : 'a
     ; pc : 'a [@bits 32]
     ; halted : 'a
+    ; trap : 'a
     }
   [@@deriving hardcaml]
 end
 
 let create (i : Signal.t I.t) : Signal.t O.t =
   let reg_spec = Reg_spec.create ~clock:i.clock ~clear:i.reset () in
+  let c v = Signal.of_int ~width:32 v in
+  let c2 v = Signal.of_int ~width:2 v in
   let instr = i.imem_rdata in
   let opcode = Signal.select instr 6 0 in
   let rd = Signal.select instr 11 7 in
@@ -85,11 +95,44 @@ let create (i : Signal.t I.t) : Signal.t O.t =
   let is_store = opcode ==:. Isa.op_store in
   let is_imm = opcode ==:. Isa.op_imm in
   let is_reg = opcode ==:. Isa.op_reg in
-  let is_ebreak = instr ==:. Isa.ebreak in
-  (* halt latch: set on EBREAK and never cleared until reset *)
-  let halted = Signal.reg_fb reg_spec ~width:1 ~f:(fun h -> h |: is_ebreak) in
-  (* register file, wired through forward references so the write data can
-     depend on the read data without a construction-order cycle *)
+  let is_system = opcode ==:. Isa.op_system in
+  (* privileged and CSR instructions *)
+  let is_ecall = instr ==:. 0x00000073 in
+  let is_ebreak = instr ==:. 0x00100073 in
+  let is_mret = instr ==:. 0x30200073 in
+  let is_wfi = instr ==:. 0x10500073 in
+  let is_csr = is_system &: (funct3 <>:. 0) in
+  let csr_rw = (funct3 ==:. 1) |: (funct3 ==:. 5) in
+  let csr_rs = (funct3 ==:. 2) |: (funct3 ==:. 6) in
+  let csr_rc = (funct3 ==:. 3) |: (funct3 ==:. 7) in
+  let csr_imm = (funct3 ==:. 5) |: (funct3 ==:. 6) |: (funct3 ==:. 7) in
+  (* legality *)
+  let f3_in ns = List.fold_left (fun acc n -> acc |: (funct3 ==:. n)) Signal.gnd ns in
+  let reg_ok =
+    ((funct3 ==:. 0) |: (funct3 ==:. 5))
+    &: ((funct7 ==:. 0) |: (funct7 ==:. 0x20))
+    |: ((funct3 <>:. 0) &: (funct3 <>:. 5))
+  in
+  let legal =
+    is_lui |: is_auipc |: is_jal |: is_jalr
+    |: (is_branch &: f3_in [ 0; 1; 4; 5; 6; 7 ])
+    |: (is_load &: f3_in [ 0; 1; 2; 4; 5 ])
+    |: (is_store &: f3_in [ 0; 1; 2 ])
+    |: is_imm
+    |: (is_reg &: reg_ok)
+    |: ((funct3 ==:. 0) &: is_system &: (is_ecall |: is_ebreak |: is_mret |: is_wfi))
+    |: (is_system &: f3_in [ 1; 2; 3; 5; 6; 7 ])
+  in
+  let illegal = ~:legal in
+  (* exceptions *)
+  let exception_ = illegal |: is_ecall |: is_ebreak in
+  let exc_cause = Signal.mux2 illegal (c 2) (Signal.mux2 is_ecall (c 11) (c 3)) in
+  let exc_val = Signal.mux2 illegal instr (c 0) in
+  (* halt latch *)
+  let halted =
+    Signal.reg_fb reg_spec ~width:1 ~f:(fun h -> h |: i.halt_req)
+  in
+  (* register file via forward references *)
   let wdata_wire = Signal.wire 32 in
   let we_wire = Signal.wire 1 in
   let rf_i : Signal.t Regfile.I.t =
@@ -137,7 +180,6 @@ let create (i : Signal.t I.t) : Signal.t O.t =
       ]
   in
   let alu_op = Signal.mux2 is_reg r_alu (Signal.mux2 is_imm i_alu (op4 Alu.Op.add)) in
-  (* operand selection *)
   let alu_src_imm =
     is_imm |: is_load |: is_store |: is_jalr |: is_lui |: is_auipc
   in
@@ -153,7 +195,6 @@ let create (i : Signal.t I.t) : Signal.t O.t =
             imm_j
             (Signal.mux2 is_lui imm_u (Signal.mux2 is_auipc imm_u imm_i))))
   in
-  (* branch condition *)
   let branch_taken =
     Signal.mux
       funct3
@@ -167,29 +208,71 @@ let create (i : Signal.t I.t) : Signal.t O.t =
       ; rs1_data >=: rs2_data
       ]
   in
-  (* program counter *)
-  let pc =
-    Signal.reg_fb reg_spec ~width:32 ~f:(fun pc ->
-      let pc4 = pc +:. 4 in
-      let branch_target = pc +: imm_b in
-      let jal_target = pc +: imm_j in
-      let jalr_target = (rs1_data +: imm_i) &: Signal.of_int ~width:32 (lnot 1) in
-      let next_pc =
-        Signal.mux2
-          is_jal
-          jal_target
-          (Signal.mux2
-             is_jalr
-             jalr_target
-             (Signal.mux2 (is_branch &: branch_taken) branch_target pc4))
-      in
-      Signal.mux2 halted pc next_pc)
+  (* program counter and control-flow target *)
+  let pc_wire = Signal.wire 32 in
+  let mepc_wire = Signal.wire 32 in
+  let mtvec_wire = Signal.wire 32 in
+  let next_pc_normal =
+    let branch_target = pc_wire +: imm_b in
+    let jal_target = pc_wire +: imm_j in
+    let jalr_target = (rs1_data +: imm_i) &: c (lnot 1) in
+    Signal.mux2
+      is_jal
+      jal_target
+      (Signal.mux2
+         is_jalr
+         jalr_target
+         (Signal.mux2 (is_branch &: branch_taken) branch_target (pc_wire +:. 4)))
   in
-  let pc4 = pc +:. 4 in
+  (* CSR file, with forward references for the trap inputs *)
+  let trap_wire = Signal.wire 1 in
+  let trap_cause_wire = Signal.wire 32 in
+  let trap_pc_wire = Signal.wire 32 in
+  let trap_val_wire = Signal.wire 32 in
+  let csr_i : Signal.t Csr.I.t =
+    { clock = i.clock
+    ; reset = i.reset
+    ; addr = Signal.select instr 31 20
+    ; op = Signal.mux2 csr_rw (c2 0) (Signal.mux2 csr_rs (c2 1) (c2 2))
+    ; src = Signal.mux2 csr_imm (Signal.uresize rs1 32) rs1_data
+    ; wr = is_csr &: (csr_rw |: ((csr_rs |: csr_rc) &: (rs1 <>:. 0)))
+    ; retire = ~:illegal &: ~:halted
+    ; trap = trap_wire
+    ; trap_cause = trap_cause_wire
+    ; trap_pc = trap_pc_wire
+    ; trap_val = trap_val_wire
+    ; mret = is_mret
+    ; irq_sw = i.irq_sw
+    ; irq_timer = i.irq_timer
+    ; irq_ext = i.irq_ext
+    }
+  in
+  let csr = Csr.create csr_i in
+  let interrupt_taken = csr.Csr.O.interrupt &: ~:exception_ in
+  let trap_taken = exception_ |: interrupt_taken in
+  let pc =
+    Signal.reg_fb reg_spec ~width:32 ~f:(fun _ ->
+      Signal.mux2
+        halted
+        pc_wire
+        (Signal.mux2
+           is_mret
+           mepc_wire
+           (Signal.mux2 trap_taken mtvec_wire next_pc_normal)))
+  in
+  Signal.assign pc_wire pc;
+  Signal.assign mepc_wire csr.Csr.O.mepc;
+  Signal.assign mtvec_wire (csr.Csr.O.mtvec &: c (lnot 3));
+  Signal.assign trap_wire trap_taken;
+  Signal.assign
+    trap_cause_wire
+    (Signal.mux2 exception_ exc_cause csr.Csr.O.interrupt_cause);
+  Signal.assign trap_pc_wire (Signal.mux2 exception_ pc_wire next_pc_normal);
+  Signal.assign trap_val_wire (Signal.mux2 exception_ exc_val (c 0));
+  let pc4 = pc_wire +:. 4 in
   (* ALU *)
-  (* LUI ignores rs1: force operand A to zero so the result is the immediate *)
   let alu_a =
-    Signal.mux2 is_auipc pc (Signal.mux2 is_lui (Signal.zero 32) rs1_data)
+    Signal.mux2 is_auipc pc_wire (Signal.mux2 is_lui (Signal.zero 32) rs1_data)
   in
   let alu_b = Signal.mux2 alu_src_imm imm rs2_data in
   let alu_result = Alu.create ~op:alu_op ~a:alu_a ~b:alu_b in
@@ -244,20 +327,26 @@ let create (i : Signal.t I.t) : Signal.t O.t =
   in
   (* write back *)
   let link = is_jal |: is_jalr in
-  let wb_data = Signal.mux2 is_load load_data (Signal.mux2 link pc4 alu_result) in
+  let wb_data =
+    Signal.mux2
+      is_load
+      load_data
+      (Signal.mux2 link pc4 (Signal.mux2 is_csr csr.Csr.O.rdata alu_result))
+  in
   let reg_write =
-    is_reg |: is_imm |: is_load |: is_lui |: is_auipc |: is_jal |: is_jalr
+    is_reg |: is_imm |: is_load |: is_lui |: is_auipc |: is_jal |: is_jalr |: is_csr
   in
   Signal.assign wdata_wire wb_data;
-  Signal.assign we_wire (reg_write &: ~:halted);
-  let dmem_we = is_store &: ~:halted in
-  { O.imem_addr = pc
+  Signal.assign we_wire (reg_write &: ~:halted &: ~:exception_);
+  let dmem_we = is_store &: ~:halted &: ~:exception_ in
+  { O.imem_addr = pc_wire
   ; dmem_addr = alu_result
   ; dmem_wdata = store_data
   ; dmem_wstrb = store_strb
   ; dmem_we
   ; dmem_re = is_load
-  ; pc
+  ; pc = pc_wire
   ; halted
+  ; trap = trap_taken
   }
 ;;

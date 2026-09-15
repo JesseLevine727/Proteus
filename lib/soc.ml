@@ -1,16 +1,19 @@
-(* Proteus Phase 1 SoC.
+(* Proteus Phase 2 SoC.
 
    Wires the CPU to:
    - a combinational instruction ROM (loaded from a program image)
    - a small byte-writable data RAM (combinational read)
    - a memory-mapped GPIO output register
+   - a HALT register used by simulation to terminate a program
 
    Memory map (address bits [31:28]):
      0x1.......  data RAM
      0x2.......  GPIO
+     0x3.......  machine timer (mtime/mtimecmp)
+     0x7.......  HALT (write-only)
 
-   The instruction ROM and data RAM are deliberately simple for Phase 1;
-   Phase 5 replaces them with SRAM macros and pipelines the fetch path. *)
+   The instruction ROM and data RAM are deliberately simple; Phase 5 replaces
+   them with SRAM macros and pipelines the fetch path. *)
 
 open Hardcaml
 open Signal
@@ -30,6 +33,7 @@ module O = struct
     { uo_out : 'a [@bits 8]
     ; halted : 'a
     ; pc : 'a [@bits 32]
+    ; trap : 'a
     ; dbg_rdata : 'a [@bits 32] (* test-only data RAM read port *)
     }
   [@@deriving hardcaml]
@@ -46,11 +50,17 @@ let create ~(program : int array) (i : Signal.t I.t) : Signal.t O.t =
   let reg_spec = Reg_spec.create ~clock:i.clock ~clear:i.reset () in
   let imem_rdata_w = Signal.wire 32 in
   let dmem_rdata_w = Signal.wire 32 in
+  let halt_wire = Signal.wire 1 in
+  let irq_timer_wire = Signal.wire 1 in
   let cpu_i : Signal.t Cpu.I.t =
     { clock = i.clock
     ; reset = i.reset
     ; imem_rdata = imem_rdata_w
     ; dmem_rdata = dmem_rdata_w
+    ; irq_sw = Signal.gnd
+    ; irq_timer = irq_timer_wire
+    ; irq_ext = Signal.gnd
+    ; halt_req = halt_wire
     }
   in
   let cpu = Cpu.create cpu_i in
@@ -97,14 +107,34 @@ let create ~(program : int array) (i : Signal.t I.t) : Signal.t O.t =
     Signal.reg_fb reg_spec ~width:8 ~enable:gpio_we ~f:(fun _ ->
       Signal.select cpu.Cpu.O.dmem_wdata 7 0)
   in
-  let dmem_rdata =
-    Signal.mux2 gpio_sel (Signal.uresize gpio_out 32) ram_rdata
+  (* machine timer *)
+  let timer_sel = Signal.select dmem_addr 31 28 ==:. 0x3 in
+  let timer =
+    Timer.create
+      { clock = i.clock
+      ; reset = i.reset
+      ; sel = timer_sel
+      ; we = cpu.Cpu.O.dmem_we
+      ; addr = Signal.select dmem_addr 5 2
+      ; wdata = cpu.Cpu.O.dmem_wdata
+      }
   in
+  Signal.assign irq_timer_wire timer.Timer.O.irq;
+  let dmem_rdata =
+    Signal.mux2
+      timer_sel
+      timer.Timer.O.rdata
+      (Signal.mux2 gpio_sel (Signal.uresize gpio_out 32) ram_rdata)
+  in
+  (* HALT register: a store anywhere in the 0x7 region halts the core *)
+  let halt_sel = Signal.select dmem_addr 31 28 ==:. 0x7 in
+  Signal.assign halt_wire (cpu.Cpu.O.dmem_we &: halt_sel);
   Signal.assign imem_rdata_w imem_rdata;
   Signal.assign dmem_rdata_w dmem_rdata;
   { O.uo_out = gpio_out
   ; halted = cpu.Cpu.O.halted
   ; pc
+  ; trap = cpu.Cpu.O.trap
   ; dbg_rdata = ram_read i.dbg_addr
   }
 ;;

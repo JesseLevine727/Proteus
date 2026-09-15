@@ -40,7 +40,7 @@ let uart_tx ~(byte : int) ~(delay : int) () : int array =
     ; Asm.Insn (srli t0 t0 1) (* shift frame *)
     ; Asm.Insn (addi t1 t1 (-1)) (* one fewer bit *)
     ; Asm.Branch ((fun off -> bne t1 x0 off), "send_loop")
-    ; Asm.Insn ebreak
+    ; Asm.Halt
     ; Asm.Label "bit_delay"
     ; Asm.Insn (addi s1 a0 0) (* x9 = delay *)
     ; Asm.Label "bd_loop"
@@ -62,6 +62,6 @@ let ram_pattern () : int array =
     ; Asm.Insn (lw t1 s0 0)
     ; Asm.Insn (add t1 t1 t0)
     ; Asm.Insn (sw t1 s0 8)
-    ; Asm.Insn ebreak
+    ; Asm.Halt
     ]
 ;;

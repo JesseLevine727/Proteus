@@ -58,6 +58,7 @@ memory-mapped.
 | Timers & dividers | `0x3000_0000` | 4 KiB | compare + baud/symbol generators |
 | Interrupt controller | `0x4000_0000` | 4 KiB | enable / pending / ack |
 | Accelerators | `0x5000_0000` | 16 KiB | shift / FIFO / DMA / CRC (Phase 5+) |
+| CAN controller | `0x5800_0000` | 4 KiB | CAN 2.0B registers (Phase 6) |
 | UART (debug) | `0x6000_0000` | 4 KiB | firmware console |
 
 Exact sizes are provisional; the goal is a clean, decodable map with room for
@@ -81,6 +82,25 @@ Introduced only when firmware misses timing:
 - **DMA** — memory-to-memory and memory-to-peripheral
 - **CRC32** — Ethernet FCS and general checksums
 - **Manchester** — only if we choose the PHY-less Ethernet path
+- **CAN 2.0B controller** — bit timing, bit stuffing, CRC-15, error states and
+  mailboxes, for full-rate CAN (see below)
+
+## 5.1 CAN bus
+
+CAN is a differential, multi-master bus with dominant/recessive signalling.
+Proteus supports it in two tiers, consistent with the firmware-first thesis:
+
+- **Firmware CAN (Phase 3)** — up to ~250 kbit/s, built from the programmable
+  I/O and timing primitives. No dedicated hardware, so it works on any pin
+  pair and demonstrates the reconfigurability claim.
+- **Hardware CAN 2.0B controller (Phase 6)** — full rate (≤1 Mbit/s), with
+  prescaler/bit-timing, bit stuffing, CRC-15, ACK, error counters and states
+  (error-active/passive/bus-off), acceptance filtering and TX/RX mailboxes.
+
+The analog layer is external: 2 pins (`CAN_TX`, `CAN_RX`) connect to a
+transceiver (SN65HVD230, TJA1050 or MCP2551) driving the differential pair.
+CAN FD is out of scope. Verification uses a two-node simulation with a
+wired-AND bus model, which exercises arbitration and bit stuffing.
 
 ## 6. Boot and program loading
 
@@ -110,7 +130,8 @@ run time.
 | `uio_in/out/oe[7:0]` | bidir | bidirectional protocol lines |
 
 Ethernet (Phase 6) uses MII to an external PHY and will consume a large share
-of these pins; the pin allocation per protocol is a Phase 3–6 design task.
+of these pins; CAN needs 2 pins (`CAN_TX`/`CAN_RX`) to a transceiver. The pin
+allocation per protocol is a Phase 3–6 design task.
 
 ## 9. Open questions
 
@@ -118,3 +139,5 @@ of these pins; the pin allocation per protocol is a Phase 3–6 design task.
 - Bootloader pin assignment vs reusing protocol pins.
 - Whether JTAG is a hardware TAP, firmware host, or both (Phase 4).
 - MII pin budget vs other protocols (Phase 6).
+- CAN: firmware-only, hardware controller, or both — depends on the Phase 5
+  area report. Firmware CAN (≤250 kbit/s) is the guaranteed deliverable.

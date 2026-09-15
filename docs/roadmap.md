@@ -20,7 +20,7 @@ constraints.
 |---|---|---|
 | Process | IHP 130 nm CMOS5L via Tiny Tapeout | Open flow, `ttihp-verilog-template` (`cmos5l`) |
 | Area | 6×4 tiles ≈ 0.7 mm², ~24K logic cells | Instruction/data memory should be SRAM, not flops |
-| Pins | 24 signals: `ui_in[7:0]`, `uo_out[7:0]`, `uio[7:0]` | Ethernet needs MII-to-PHY; full MII uses most pins |
+| Pins | 24 signals: `ui_in[7:0]`, `uo_out[7:0]`, `uio[7:0]` | Ethernet needs MII-to-PHY (most pins); CAN needs an external transceiver (2 pins) |
 | Clock | ~25–100 MHz achievable at this node | MII at 10 Mbit (2.5 MHz) is comfortable |
 | Deadline | 18 January 2027 | Phases 0–7 must close with an early synthesis checkpoint |
 
@@ -44,15 +44,16 @@ constraints.
    |  Timers / clock dividers / interrupt controller   |
    +-------------------------+-------------------------+
                              |
-   +-------------------------+-------------------------+
-   |        Hardware accelerators (added in phases)    |
-   |  shift engine | FIFO | DMA | CRC32 | Manchester   |
-   +---------------------------------------------------+
+    +-------------------------+-------------------------+
+    |        Hardware accelerators (added in phases)    |
+    |  shift engine | FIFO | DMA | CRC | Manchester     |
+    |  Ethernet MAC (MII) | CAN 2.0B controller          |
+    +---------------------------------------------------+
 ```
 
-Protocols are firmware: UART, SPI, I2C, PS/2, SWD and JTAG are programs.
-Hardware accelerators are introduced only where firmware cannot meet timing
-(notably 10 Mbit Ethernet).
+Protocols are firmware: UART, SPI, I2C, PS/2, SWD, JTAG and low-speed CAN are
+programs. Hardware accelerators are introduced only where firmware cannot meet
+timing (notably 10 Mbit Ethernet and high-speed CAN).
 
 ## Cross-cutting tracks
 
@@ -122,10 +123,12 @@ loaded by the bootloader.
 - `PIN_WAIT` (level/edge with timeout), `DELAY`, cycle-accurate scheduling
 - Interrupt controller: pin edges and timer compare
 
-**Exit:** UART, SPI and I2C are all implemented **in firmware** and pass
-loopback tests against OCaml golden models.
+**Exit:** UART, SPI, I2C **and low-speed CAN (≤250 kbit/s)** are implemented
+**in firmware** and pass loopback tests against OCaml golden models.
 
-**Verification:** protocol golden models; timing-accuracy assertions.
+**Verification:** protocol golden models; timing-accuracy assertions. CAN is
+verified against a two-node simulation with a wired-AND bus model, which
+exercises arbitration and bit stuffing.
 
 ### Phase 4 — The Watcher (JTAG)
 
@@ -153,20 +156,29 @@ real TAP; TAP FSM formally verified.
 area, leave room for clock-tree buffers and routing. *A design that
 synthesizes small can still fail to route.*
 
-### Phase 6 — The Ether (stretch)
+### Phase 6 — The Ether and the Wire (stretch)
 
-**Goal:** 10 Mbit Ethernet.
+**Goal:** 10 Mbit Ethernet and a hardware CAN 2.0B controller.
 
+Ethernet:
 - Digital 10BASE-T MAC: preamble/SFD, FCS (CRC32), address filtering
 - **MII to an external PHY** (2.5 MHz TX/RX clock), PHY does Manchester
 - RX/TX buffering via DMA/FIFO from Phase 5
 
-**Exit:** real Ethernet frames transmitted and received (loopback or via an
-MII PHY), verified against a reference.
+CAN:
+- Hardware **CAN 2.0B controller** for full-rate (up to 1 Mbit/s) operation:
+  bit-timing/prescaler, bit stuffing, CRC-15, ACK, error counters and states
+  (error-active/passive/bus-off), acceptance filtering, TX/RX mailboxes
+- 2 pins (`CAN_TX`/`CAN_RX`) to an external transceiver (e.g. SN65HVD230,
+  TJA1050, MCP2551)
 
-**Fallback:** if area/timing do not allow a MAC, demonstrate a Manchester
-PMA on 2–4 pins, or defer Ethernet and ship a fully verified JTAG + multi-
-protocol emulator.
+**Exit:** real Ethernet frames transmitted and received (loopback or via an
+MII PHY) and real CAN frames exchanged on a bus, both verified against a
+reference.
+
+**Fallback:** these are **separable and area-gated**. If the Phase 5 synthesis
+checkpoint shows insufficient room for both, ship whichever fits and keep the
+other as verified firmware (low-speed CAN) or a Manchester PMA on 2–4 pins.
 
 ### Phase 7 — Silicon
 
@@ -194,10 +206,10 @@ suite from the repository alone.
 | Window | Phases | Milestone |
 |---|---|---|
 | Sep 2026 | 0–1 | Toolchain + first firmware-driven pin |
-| Oct 2026 | 2–3 | Real CPU + UART/SPI/I2C in firmware |
+| Oct 2026 | 2–3 | Real CPU + UART/SPI/I2C/CAN in firmware |
 | Nov 2026 | 4 | JTAG target/host |
 | Nov–Dec 2026 | 5 | Accelerators + **early synthesis checkpoint** |
-| Dec 2026 | 6 | Ethernet (stretch) |
+| Dec 2026 | 6 | Ethernet + CAN controller (stretch, area-gated) |
 | Dec 2026–Jan 2027 | 7 | ASIC hardening, timing closure |
 | Jan 2027 | 8 | Verification evidence + submission |
 
@@ -207,6 +219,7 @@ suite from the repository alone.
 |---|---|
 | Design too large to fit | SRAM memories; early synthesis checkpoint; accelerators gated on area |
 | Timing closure at target clock | Keep critical paths in hardware; pipeline the core; MII (2.5 MHz) not Manchester |
-| Ethernet does not fit | Fallback to Manchester PMA or defer; JTAG + multi-protocol is already novel |
+| Ethernet/CAN controllers do not both fit | Area-gated and separable: firmware CAN (≤250 kbit/s) needs no area; ship whichever hardware controller fits |
+| CAN at full rate needs real timing | Hardware controller (not firmware) for ≥500 kbit/s; firmware only for ≤250 kbit/s |
 | Verification debt | Evidence required at every phase exit, not retrofitted |
 | Schedule slip | Stretch goals (Ethernet) explicitly separable from the core deliverable |

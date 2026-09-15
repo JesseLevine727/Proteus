@@ -71,7 +71,7 @@ let () =
          ; i (addi s1 x0 (-1))
          ; i (slt t2 s1 t1); i (sw t2 s0 36)
          ; i (sltu t2 s1 t1); i (sw t2 s0 40)
-         ; i ebreak
+         ; Asm.Halt
          ])
   in
   check "sub" (mem ram) 7;
@@ -106,7 +106,7 @@ let () =
          ; i (addi t2 x0 0xBAD)
          ; Asm.Label "L4"
          ; i (addi t2 x0 4); i (sw t2 s0 12)
-         ; i ebreak
+         ; Asm.Halt
          ])
   in
   check "beq" (mem ram) 1;
@@ -121,7 +121,7 @@ let () =
          ; Asm.Jump ((fun off -> jal ra off), "func")
          ; Asm.Label "after"
          ; i (sw t2 s0 0)
-         ; i ebreak
+         ; Asm.Halt
          ; Asm.Label "func"
          ; i (addi t2 x0 0x77)
          ; i (jalr x0 ra 0)
@@ -143,7 +143,7 @@ let () =
          ; i (lw t1 s0 0); i (sw t1 s0 20)
          ; i (lui t2 0x4000); i (addi t2 t2 0x567); i (sh t2 s0 0)
          ; i (lw t1 s0 0); i (sw t1 s0 24)
-         ; i ebreak
+         ; Asm.Halt
          ])
   in
   check "lbu" (mem (ram + 4)) 0xAB;
@@ -161,7 +161,7 @@ let () =
          ; i (sw t0 s0 0)
          ; i (auipc t1 0)
          ; i (sw t1 s0 4)
-         ; i ebreak
+         ; Asm.Halt
          ])
   in
   check "lui" (mem ram) 0x12345000;
@@ -182,7 +182,7 @@ let () =
          ; i (srai t2 t0 1); i (sw t2 s0 28)
          ; i (addi t2 x0 (-16))
          ; i (srai s1 t2 2); i (sw s1 s0 32)
-         ; i ebreak
+         ; Asm.Halt
          ])
   in
   check "slti" (mem ram) 1;
@@ -209,7 +209,7 @@ let () =
          ; i (addi t2 x0 0xBAD)
          ; Asm.Label "U2"
          ; i (addi t2 x0 2); i (sw t2 s0 4)
-         ; i ebreak
+         ; Asm.Halt
          ])
   in
   check "bltu" (mem ram) 1;
@@ -225,7 +225,7 @@ let () =
          ; i (addi t2 x0 1)
          ; i (sw t2 s0 0)
          ; i (sw t1 s0 4)
-         ; i ebreak
+         ; Asm.Halt
          ])
   in
   check "jalr_target" (mem ram) 1;

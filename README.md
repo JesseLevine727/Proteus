@@ -19,7 +19,7 @@ the hard part of this competition is exactly that: one die, many forms.
 ```
 firmware  ──►  RV32 micro-core  ──►  memory-mapped I/O  ──►  24 pins
               (pin/timing ISA)       GPIO/timers/IRQ        (UART, SPI, I2C,
-                                                             JTAG, ...)
+                                                             JTAG, CAN, ...)
 ```
 
 - **Core** — a custom RV32E/RV32I micro-core with cycle counter, fast
@@ -29,9 +29,11 @@ firmware  ──►  RV32 micro-core  ──►  memory-mapped I/O  ──►  2
 - **I/O** — all 24 Tiny Tapeout pins, memory-mapped with atomic set/clear/
   toggle, edge detection and capture.
 - **Accelerators** — added only where firmware misses timing: shift engine,
-  FIFOs, DMA, CRC32, and 10 Mbit Ethernet via MII to an external PHY.
+  FIFOs, DMA, CRC32, 10 Mbit Ethernet via MII to an external PHY, and a
+  hardware CAN 2.0B controller.
 
-Protocols are programs. UART, SPI, I2C, PS/2, SWD and JTAG are all firmware.
+Protocols are programs. UART, SPI, I2C, PS/2, SWD, JTAG and low-speed CAN are
+all firmware; full-rate Ethernet and CAN get area-gated hardware assist.
 
 ## Current status
 
@@ -47,7 +49,8 @@ byte-writable data RAM, memory-mapped GPIO, and directed CPU + firmware
 tests. Generated Verilog is Verilator-lint clean.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the phased plan,
-[`docs/architecture.md`](docs/architecture.md) for the architecture, and
+[`docs/architecture.md`](docs/architecture.md) for the architecture,
+[`docs/protocols.md`](docs/protocols.md) for protocol targets, and
 [`docs/isa.md`](docs/isa.md) for the implemented instruction set.
 
 ## Quickstart
@@ -94,6 +97,7 @@ UART firmware test PASSED
 └── docs/
     ├── roadmap.md       # phased plan with exit gates
     ├── architecture.md  # architecture and memory map
+    ├── protocols.md     # protocol targets and verification approach
     └── isa.md           # implemented instruction set
 ```
 
@@ -107,7 +111,7 @@ UART firmware test PASSED
 | 3. Reflexes | UART/SPI/I2C in firmware, precise timing |
 | 4. The Watcher | JTAG (TAP target and/or host) |
 | 5. Conduits | Shift/FIFO/DMA/CRC + early synthesis checkpoint |
-| 6. The Ether | 10 Mbit Ethernet via MII (stretch) |
+| 6. The Ether and the Wire | 10 Mbit Ethernet (MII) + CAN 2.0B controller (stretch) |
 | 7. Silicon | Tiny Tapeout hardening → GDSII |
 | 8. Legacy | Reproducible verification evidence + docs |
 

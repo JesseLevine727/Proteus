@@ -150,7 +150,32 @@ let sra rd rs1 rs2 = r_type op_reg rd 5 rs1 rs2 0x20
 let or_ rd rs1 rs2 = r_type op_reg rd 6 rs1 rs2 0x00
 let and_ rd rs1 rs2 = r_type op_reg rd 7 rs1 rs2 0x00
 
+(* CSR instructions (opcode SYSTEM) *)
+let csrrw rd csr rs1 = i_type op_system rd 1 rs1 csr
+let csrrs rd csr rs1 = i_type op_system rd 2 rs1 csr
+let csrrc rd csr rs1 = i_type op_system rd 3 rs1 csr
+let csrrwi rd csr uimm = i_type op_system rd 5 uimm csr
+let csrrsi rd csr uimm = i_type op_system rd 6 uimm csr
+let csrrci rd csr uimm = i_type op_system rd 7 uimm csr
+
+(* machine-mode CSR addresses *)
+let csr_mstatus = 0x300
+let csr_misa = 0x301
+let csr_mie = 0x304
+let csr_mtvec = 0x305
+let csr_mscratch = 0x340
+let csr_mepc = 0x341
+let csr_mcause = 0x342
+let csr_mtval = 0x343
+let csr_mip = 0x344
+let csr_mcycle = 0xB00
+let csr_minstret = 0xB02
+let csr_mcycleh = 0xB80
+let csr_minstreth = 0xB82
+
 (* system *)
 let nop = addi x0 x0 0
 let ebreak = 0x00100073
 let ecall = 0x00000073
+let mret = 0x30200073
+let wfi = 0x10500073
