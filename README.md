@@ -45,9 +45,9 @@ the protocol-oriented instructions `DELAY`, `PIN_WAIT` and `PIN_EDGE`.
 
 With those, **UART, SPI, I2C and low-speed CAN are all implemented in
 firmware** and verified against independent OCaml golden models. CAN is a
-pair of CAN 2.0A nodes in C — transmit (stuffing, CRC-15, arbitration) and
-receive (sample, de-stuff, decode, CRC check) — checked on a two-node
-wired-AND bus.
+pair of CAN 2.0A nodes — transmit (stuffing, CRC-15, arbitration) and receive
+(sample, de-stuff, decode, CRC check, ACK, with an assembly timing loop) —
+checked on a two-node wired-AND bus.
 
 Implemented so far: RV32I + Zicsr + traps, interrupts, timers, a debug UART, a
 hardware bootloader, a C toolchain, the pin subsystem, the timing ISA, and the

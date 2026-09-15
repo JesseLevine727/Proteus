@@ -153,9 +153,10 @@ Sub-phases, each with its own gate:
 - **3g CAN firmware ✓** — CAN 2.0A nodes in C: a transmitter
   (`firmware/can.c`) with bit stuffing, CRC-15, arbitration and bit-error
   detection, and a receiver (`firmware/can_rx.c`) that waits for the SOF,
-  samples, de-stuffs, decodes and CRC-checks a standard data frame. Both are
-  verified on a wired-AND bus with a peer model. **Known gap:** the receiver
-  does not drive the ACK slot yet.
+  samples, de-stuffs, decodes, CRC-checks and ACKs a standard data frame. Its
+  timing-critical loop is hand-written assembly (`firmware/can_rx_asm.S`) so
+  the bit period is exactly constant. Both nodes are verified on a wired-AND
+  bus with a peer model.
 - **3h Verification ✓** — 15 self-checking tests; protocol golden models;
   generated Verilog is Verilator-lint clean.
 

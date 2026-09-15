@@ -118,7 +118,10 @@ let () =
   check "dlc" got_dlc dlc;
   check "data" got_data 0x112233;
   check "crc_ok" crc_ok 1;
-  ignore !acked;
+  if not !acked
+  then (
+    incr failures;
+    Printf.printf "FAIL: receiver did not drive ACK\n");
   if !failures = 0
   then Printf.printf "CAN RX firmware test PASSED\n"
   else exit 1
