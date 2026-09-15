@@ -130,7 +130,7 @@ let check name got =
 ;;
 
 let () =
-  let image = C_firmware.hello in
+  let image = Hello_firmware.hello in
   Printf.printf "C image: %d words\n" (Array.length image);
   check "direct" (decode_all (capture (Sim.create (Soc.create ~program:image))));
   check "bootloader" (decode_all (run_booted image));

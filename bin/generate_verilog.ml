@@ -23,5 +23,5 @@ let () =
   write
     (Soc_circuit.create_exn
        ~name:"proteus_soc"
-       (Soc.create ~program:C_firmware.hello))
+       (Soc.create ~program:Hello_firmware.hello))
 ;;

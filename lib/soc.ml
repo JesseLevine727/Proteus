@@ -54,7 +54,7 @@ let clog2 n =
 ;;
 
 let imem_words = 256
-let data_ram_words = 64
+let data_ram_words = 256
 
 let create ?(boot = false) ~(program : int array) (i : Signal.t I.t) : Signal.t O.t =
   let reg_spec = Reg_spec.create ~clock:i.clock ~clear:i.reset () in

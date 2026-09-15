@@ -150,16 +150,18 @@ Sub-phases, each with its own gate:
   edge-triggered slave model.
 - **3f I2C firmware ✓** — master with open-drain, START/STOP and ACK, against
   a pull-up slave model.
-- **3g CAN firmware** — low-speed CAN with arbitration, bit stuffing, CRC-15
-  and ACK, verified with two nodes on a wired-AND bus. *(next)*
-- **3h Verification** — golden models, timing assertions, full regression.
+- **3g CAN firmware ✓** — a CAN 2.0A node in C (`firmware/can.c`): standard
+  data frame with bit stuffing and CRC-15, arbitration and bit-error
+  detection, verified on a wired-AND bus with a peer that de-stuffs and
+  decodes the frame and pulls the bus dominant to force arbitration loss.
+- **3h Verification ✓** — 15 self-checking tests; protocol golden models;
+  generated Verilog is Verilator-lint clean.
 
-**Exit:** UART, SPI, I2C **and low-speed CAN (≤250 kbit/s)** are implemented
-**in firmware** and pass loopback tests against OCaml golden models.
+**Exit met:** UART, SPI, I2C **and low-speed CAN** are implemented **in
+firmware** and verified against independent OCaml golden models.
 
-**Verification:** protocol golden models; timing-accuracy assertions. CAN is
-verified against a two-node simulation with a wired-AND bus model, which
-exercises arbitration and bit stuffing.
+**Verification:** CAN is verified on a two-node wired-AND bus, exercising
+bit stuffing, CRC-15 and arbitration.
 
 **Board:** Phase 3 is simulation-only; no FPGA required.
 

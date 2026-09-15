@@ -37,21 +37,21 @@ all firmware; full-rate Ethernet and CAN get area-gated hardware assist.
 
 ## Current status
 
-**Phase 2 complete — Voice.**
+**Phase 3 complete — Reflexes.**
 
-The core now implements the full RV32I base plus the Zicsr CSR instructions
-and machine-mode traps (illegal instruction, ECALL, EBREAK) with MRET, and
-machine software/timer/external interrupts. Around it sit a writable
-instruction RAM, a data RAM, GPIO, a machine timer, a debug UART and a
-hardware bootloader.
+The chip now has a programmable 24-pin subsystem (output value, output-enable,
+atomic set/clear/toggle, edge detection, pin interrupts), and the core gained
+the protocol-oriented instructions `DELAY`, `PIN_WAIT` and `PIN_EDGE`.
 
-The Phase 2 exit gate is met: **compiled C firmware prints over the UART**,
-both when loaded directly and when streamed in through the bootloader, using
-the `riscv32-unknown-elf-gcc` toolchain in `firmware/`.
+With those, **UART, SPI, I2C and low-speed CAN are all implemented in
+firmware** and verified against independent OCaml golden models. CAN is a
+CAN 2.0A node in C with bit stuffing, CRC-15 and arbitration, checked on a
+two-node wired-AND bus.
 
-Implemented so far: RV32I + Zicsr + traps, `mcycle`/`minstret`, interrupts, a
-two-pass assembler, a C toolchain with linker script and startup, and a
-self-checking test suite. Generated Verilog is Verilator-lint clean.
+Implemented so far: RV32I + Zicsr + traps, interrupts, timers, a debug UART, a
+hardware bootloader, a C toolchain, the pin subsystem, the timing ISA, and the
+four protocol stacks. 15 self-checking tests; generated Verilog is
+Verilator-lint clean.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the phased plan,
 [`docs/architecture.md`](docs/architecture.md) for the architecture,
@@ -124,7 +124,7 @@ UART firmware test PASSED
 | 0. Foundations ✓ | Toolchain + first verified design |
 | 1. First Light | Minimal core drives a pin from firmware |
 | 2. Voice ✓ | Full CPU + CSRs/traps + UART + bootloader + C toolchain |
-| 3. Reflexes | UART/SPI/I2C in firmware, precise timing |
+| 3. Reflexes ✓ | Pin subsystem, timing ISA, UART/SPI/I2C/CAN in firmware |
 | 4. The Watcher | JTAG (TAP target and/or host) |
 | 5. Conduits | Shift/FIFO/DMA/CRC + early synthesis checkpoint |
 | 6. The Ether and the Wire | 10 Mbit Ethernet (MII) + CAN 2.0B controller (stretch) |
