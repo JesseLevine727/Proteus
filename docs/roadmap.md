@@ -148,8 +148,10 @@ Sub-phases, each with its own gate:
   against a golden 8N1 model.
 - **3e SPI firmware ✓** — mode-0 master, checked both directions against an
   edge-triggered slave model.
-- **3f I2C firmware ✓** — master with open-drain, START/STOP and ACK, against
-  a pull-up slave model.
+- **3f I2C firmware ✓** — an open-drain master (write and read paths, with
+  START/STOP and ACK/NACK) and a slave at address 0x50 (address decode, ACK,
+  write receive and read transmit), each verified against a model of the
+  other side.
 - **3g CAN firmware ✓** — CAN 2.0A nodes in C: a transmitter
   (`firmware/can.c`) with bit stuffing, CRC-15, arbitration and bit-error
   detection, and a receiver (`firmware/can_rx.c`) that waits for the SOF,
