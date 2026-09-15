@@ -145,9 +145,10 @@ Sub-phases, each with its own gate:
   with a stall mechanism.
 - **3c Interrupts ✓** — pin-edge interrupts into `mip.MEIP`.
 - **3d UART firmware ✓** — TX (Phase 1) + a firmware RX using `DELAY`,
-  against a golden 8N1 model.
-- **3e SPI firmware ✓** — mode-0 master, checked both directions against an
-  edge-triggered slave model.
+  against a golden 8N1 model; plus a parity-checking TX/RX and CTS
+  flow-control demo.
+- **3e SPI firmware ✓** — mode-0 master and slave, each checked both
+  directions against a model of the other side.
 - **3f I2C firmware ✓** — an open-drain master (write and read paths, with
   START/STOP and ACK/NACK) and a slave at address 0x50 (address decode, ACK,
   write receive and read transmit), each verified against a model of the
@@ -158,7 +159,10 @@ Sub-phases, each with its own gate:
   samples, de-stuffs, decodes, CRC-checks and ACKs a standard data frame. Its
   timing-critical loop is hand-written assembly (`firmware/can_rx_asm.S`) so
   the bit period is exactly constant. Both nodes are verified on a wired-AND
-  bus with a peer model.
+  bus with a peer model. Error handling is demonstrated too: ACK errors grow
+  the transmit error counter by 8, an active error frame (6 dominant bits) is
+  emitted, and the error-active / error-passive / bus-off thresholds are
+  checked.
 - **3h Verification ✓** — 15 self-checking tests; protocol golden models;
   generated Verilog is Verilator-lint clean.
 
