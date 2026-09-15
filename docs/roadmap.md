@@ -82,20 +82,24 @@ whose failures cannot be isolated.
 **Exit:** `dune build` clean; sim test passes; generated Verilog is
 Verilator-lint clean. *(complete)*
 
-### Phase 1 — First Light
+### Phase 1 — First Light ✓
 
 **Goal:** A minimal core executes hand-assembled code and drives a pin.
 
-- ISA specification (`docs/architecture.md`): register set, encodings,
-  custom I/O/timing instructions
-- Minimal core: fetch/decode/execute, small instruction SRAM, GPIO
-- Assembler (or hand-encoded program) and a simulation testbench
+- ISA reference in [`docs/isa.md`](isa.md); full RV32I base implemented in
+  `lib/cpu.ml`
+- Assembler (`lib/asm.ml`) and instruction encoders (`lib/isa.ml`)
+- SoC (`lib/soc.ml`): combinational instruction ROM, 64-word byte-writable
+  data RAM, memory-mapped GPIO
+- Firmware (`lib/firmware.ml`) bit-bangs an 8N1 UART frame
 
-**Exit:** a hand-written program emits UART TX on a GPIO pin entirely in
-firmware, verified in cycle-accurate simulation with waveform evidence.
+**Exit:** firmware drives GPIO bit 0 with a 10-bit UART frame; the simulator
+decodes `0xA5` back and confirms the measured bit period matches the timing
+model. *(complete)*
 
-**Verification:** directed instruction tests; trace comparison against a
-reference execution model.
+**Verification:** directed CPU tests (ALU, branches, jumps, byte/half
+load-store semantics) plus the firmware UART exit test, all in
+cycle-accurate simulation. Generated Verilog is Verilator-lint clean.
 
 ### Phase 2 — Voice
 

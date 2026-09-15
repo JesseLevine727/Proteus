@@ -9,11 +9,17 @@ open Proteus
 let () =
   let out_dir = "rtl" in
   if not (Sys.file_exists out_dir) then Unix.mkdir out_dir 0o755;
+  let write circuit =
+    Rtl.output
+      ~output_mode:(Rtl.Output_mode.In_directory out_dir)
+      Rtl.Language.Verilog
+      circuit;
+    Stdio.printf "Wrote %s/%s.v\n" out_dir (Circuit.name circuit)
+  in
   let module Uart_tx_circuit = Circuit.With_interface (Uart_tx.I) (Uart_tx.O) in
-  let uart_tx = Uart_tx_circuit.create_exn ~name:"uart_tx" Uart_tx.create in
-  Rtl.output
-    ~output_mode:(Rtl.Output_mode.In_directory out_dir)
-    Rtl.Language.Verilog
-    uart_tx;
-  Stdio.printf "Wrote %s/uart_tx.v\n" out_dir
+  write (Uart_tx_circuit.create_exn ~name:"uart_tx" Uart_tx.create);
+  (* Phase 1 SoC running the bit-banged UART firmware image *)
+  let module Soc_circuit = Circuit.With_interface (Soc.I) (Soc.O) in
+  let program = Firmware.uart_tx ~byte:0xA5 ~delay:12 () in
+  write (Soc_circuit.create_exn ~name:"proteus_soc" (Soc.create ~program))
 ;;

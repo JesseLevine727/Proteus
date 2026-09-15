@@ -35,14 +35,20 @@ Protocols are programs. UART, SPI, I2C, PS/2, SWD and JTAG are all firmware.
 
 ## Current status
 
-**Phase 0 complete — Foundations.**
+**Phase 1 complete — First Light.**
 
-The OCaml/Hardcaml toolchain is reproducible and proven end to end: a UART
-transmitter is generated to synthesizable Verilog and decoded back to a byte
-in cycle-accurate simulation.
+A custom RV32I micro-core (`lib/cpu.ml`) executes firmware from a
+combinational instruction ROM. The firmware bit-bangs a complete 8N1 UART
+frame out of a GPIO pin, and the simulator decodes the byte back and checks
+the timing against the model — no protocol hardware involved.
 
-See [`docs/roadmap.md`](docs/roadmap.md) for the phased plan and
-[`docs/architecture.md`](docs/architecture.md) for the working specification.
+Implemented so far: full RV32I base, a two-pass assembler, a 64-word
+byte-writable data RAM, memory-mapped GPIO, and directed CPU + firmware
+tests. Generated Verilog is Verilator-lint clean.
+
+See [`docs/roadmap.md`](docs/roadmap.md) for the phased plan,
+[`docs/architecture.md`](docs/architecture.md) for the architecture, and
+[`docs/isa.md`](docs/isa.md) for the implemented instruction set.
 
 ## Quickstart
 
@@ -54,15 +60,16 @@ opam switch create . ocaml-base-compiler.5.3.0   # first time only
 eval $(opam env --switch=. --set-switch)
 
 dune build                                        # build
-dune exec test/test_uart_tx.exe                   # self-checking sim test
-dune exec bin/generate_verilog.exe                # emit rtl/uart_tx.v
+dune runtest                                      # run all tests
+dune exec test/test_uart_fw.exe                   # Phase 1 exit test
+dune exec bin/generate_verilog.exe                # emit rtl/*.v
 ```
 
-Expected test output:
+Expected Phase 1 exit test output:
 
 ```
-decoded byte = 0xA5
-UART TX test PASSED
+decoded byte = 0xA5 (start at cycle 7, period 32 cycles)
+UART firmware test PASSED
 ```
 
 ## Repository layout
@@ -70,15 +77,25 @@ UART TX test PASSED
 ```
 .
 ├── lib/                 # Hardcaml design library (the chip)
-│   └── uart_tx.ml       #   first design: UART transmitter
-├── bin/                 # executables
+│   ├── isa.ml           #   opcodes, encoders, instruction helpers
+│   ├── alu.ml           #   RV32I ALU
+│   ├── regfile.ml       #   32x32 register file
+│   ├── cpu.ml           #   single-cycle RV32I core
+│   ├── soc.ml           #   instruction ROM, data RAM, GPIO
+│   ├── asm.ml           #   two-pass assembler
+│   ├── firmware.ml      #   firmware images (bit-banged UART)
+│   └── uart_tx.ml       #   Phase 0 standalone design
+├── bin/
 │   └── generate_verilog.ml
-├── test/                # self-checking simulations
+├── test/
+│   ├── test_cpu.ml      #   directed RV32I tests
+│   ├── test_uart_fw.ml  #   Phase 1 exit test (firmware UART)
 │   └── test_uart_tx.ml
 ├── rtl/                 # generated Verilog (synthesizable)
 └── docs/
     ├── roadmap.md       # phased plan with exit gates
-    └── architecture.md  # ISA, memory map, I/O, boot
+    ├── architecture.md  # architecture and memory map
+    └── isa.md           # implemented instruction set
 ```
 
 ## Roadmap at a glance
