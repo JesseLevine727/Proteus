@@ -9,7 +9,7 @@ ENTRY(_start)
 MEMORY
 {
   IMEM (rx) : ORIGIN = 0x00000000, LENGTH = 1K
-  DMEM (rw) : ORIGIN = 0x10000000, LENGTH = 1K
+  DMEM (rw) : ORIGIN = 0x10000000, LENGTH = 2K
 }
 
 SECTIONS
@@ -35,5 +35,10 @@ SECTIONS
     _ebss = .;
   } > DMEM
 
-  _stack_top = ORIGIN(DMEM) + LENGTH(DMEM);
+  /* results buffer for testbenches, at a fixed address */
+  .result 0x10000700 (NOLOAD) : {
+    KEEP(*(.result))
+  }
+
+  _stack_top = 0x10000700;
 }

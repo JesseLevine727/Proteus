@@ -12,7 +12,7 @@
 #define PIN_OE (*(volatile unsigned int *)(PINS + 4))
 #define PIN_IN (*(volatile unsigned int *)(PINS + 8))
 #define HALT (*(volatile unsigned int *)0x70000000u)
-#define RESULT ((volatile unsigned int *)0x10000000u)
+static volatile unsigned int results[64] __attribute__((section(".result"), used));
 
 #define CAN_TX_OE 0x10000u
 #define CAN_RX_BIT 0x100u
@@ -114,10 +114,10 @@ int main(void) {
   for (int i = 0; i < 7; i++) send_bit(1);
   for (int i = 0; i < 3; i++) send_bit(1);
 
-  RESULT[0] = (unsigned int)ok;
-  RESULT[1] = crc;
-  RESULT[2] = (unsigned int)n;
-  RESULT[3] = (unsigned int)(ack == 0); /* 1 = ACK received */
+  results[0] = (unsigned int)ok;
+  results[1] = crc;
+  results[2] = (unsigned int)n;
+  results[3] = (unsigned int)(ack == 0); /* 1 = ACK received */
   HALT = 0;
   return 0;
 }

@@ -13,7 +13,7 @@ open Proteus
 module Sim = Cyclesim.With_interface (Soc.I) (Soc.O)
 let period = 220
 let half = 110
-let ram = 0x10000000
+let ram = 0x10000700 (* results buffer *)
 
 let destuff bits =
   let out = ref [] in

@@ -150,10 +150,12 @@ Sub-phases, each with its own gate:
   edge-triggered slave model.
 - **3f I2C firmware ✓** — master with open-drain, START/STOP and ACK, against
   a pull-up slave model.
-- **3g CAN firmware ✓** — a CAN 2.0A node in C (`firmware/can.c`): standard
-  data frame with bit stuffing and CRC-15, arbitration and bit-error
-  detection, verified on a wired-AND bus with a peer that de-stuffs and
-  decodes the frame and pulls the bus dominant to force arbitration loss.
+- **3g CAN firmware ✓** — CAN 2.0A nodes in C: a transmitter
+  (`firmware/can.c`) with bit stuffing, CRC-15, arbitration and bit-error
+  detection, and a receiver (`firmware/can_rx.c`) that waits for the SOF,
+  samples, de-stuffs, decodes and CRC-checks a standard data frame. Both are
+  verified on a wired-AND bus with a peer model. **Known gap:** the receiver
+  does not drive the ACK slot yet.
 - **3h Verification ✓** — 15 self-checking tests; protocol golden models;
   generated Verilog is Verilator-lint clean.
 

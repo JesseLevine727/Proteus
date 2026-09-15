@@ -33,3 +33,4 @@ build() {
 
 build hello main.c
 build can can.c
+build can_rx can_rx.c
