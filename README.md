@@ -126,14 +126,17 @@ UART firmware test PASSED
 | Phase | Goal |
 |---|---|
 | 0. Foundations ✓ | Toolchain + first verified design |
-| 1. First Light | Minimal core drives a pin from firmware |
+| 1. First Light ✓ | Minimal core drives a pin from firmware |
 | 2. Voice ✓ | Full CPU + CSRs/traps + UART + bootloader + C toolchain |
-| 3. Reflexes ✓ | Pin subsystem, timing ISA, UART/SPI/I2C/CAN in firmware |
-| 4. The Watcher | JTAG (TAP target and/or host) |
-| 5. Conduits | Shift/FIFO/DMA/CRC + early synthesis checkpoint |
-| 6. The Ether and the Wire | 10 Mbit Ethernet (MII) + CAN 2.0B controller (stretch) |
-| 7. Silicon | Tiny Tapeout hardening → GDSII |
-| 8. Legacy | Reproducible verification evidence + docs |
+| 3. Reflexes ✓ | Pin subsystem, timing ISA, protocols in firmware, 1-Wire generality proof |
+| 4. Fit *(critical)* | SRAM memories, pipelined fetch, RV32E → area headroom |
+| 5. Flow *(critical)* | Tiny Tapeout cmos5l + LibreLane end-to-end → GDSII |
+| 6. Breadth | JTAG (formal TAP FSM) + primitives if they fit |
+| 7. Stretch | 10 Mbit Ethernet on the protocol-agnostic primitives |
+| 8. Legacy | Reproducible verification evidence + submission |
+
+The plan is **risk-first** (fit → flow → features → submit); see
+[`docs/roadmap.md`](docs/roadmap.md) for the full phasing and schedule.
 
 ## Design constraints
 
