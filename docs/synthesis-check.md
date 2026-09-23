@@ -5,56 +5,58 @@ Tapeout budget, **before** adding more features.
 
 ## Method
 
-- Tool: `yosys` 0.62 (from the LibreLane Docker image).
+- Tool: `yosys` 0.62 (from the LibreLane 3.0.14 Docker image).
 - Input: the generated `rtl/proteus_soc.v`.
-- Flow: `proc; opt; fsm; opt; memory; opt; techmap; dfflibmap; abc`.
-- Library: **SkyWater SKY130** `sky130_fd_sc_hd__tt_025C_1v80` as a **proxy**
-  for the target IHP SG13G2 130 nm process (the IHP PDK is not installed
-  locally; both are ~130 nm standard-cell processes, so the comparison is
-  indicative, not exact).
+- Flow: `proc; opt; fsm; opt; memory; opt; techmap; opt; dfflibmap; abc; opt`.
+- Library: **IHP SG13G2** `sg13g2_stdcell_typ_1p20V_25C` (the target process),
+  fetched with `ciel` (`ihp-sg13g2`, also carrying the `ihp-sg13cmos5l`
+  variant). A SKY130 run was done first as a cross-check.
 
-## Result
+## Result (IHP SG13G2, the real target)
 
 | Metric | Value |
 |---|---|
-| Mapped standard cells | 77,299 |
-| Flip-flops | **18,193** |
-| Total area (SKY130 proxy) | **0.649 mm²** |
-| Flip-flop area | 0.364 mm² (56 %) |
-| Combinational logic | 0.285 mm² |
+| Mapped standard cells | 90,492 |
+| Flip-flops | **18,193** (`sg13g2_dfrbpq_1`, 48.99 µm² each) |
+| Flip-flop area | **0.891 mm²** |
+| Combinational logic | 0.664 mm² |
+| **Total area** | **1.555 mm²** |
 | 6×4 tile budget | ~0.72 mm² nominal |
+| **Ratio** | **2.16× the budget** |
 
-The design sits at roughly **90 % of the nominal tile area**, and that is
-**before** place-and-route overhead (routing, clock tree, tap cells, antenna
-diodes), which typically adds 30–50 %. **As-is, it will not fit.**
+(SKY130 mapped to 0.649 mm²; its cells are ~2.5× smaller, so IHP is the
+binding constraint. The design is over budget either way.)
 
-## What dominates
+## What dominates, and the way out
 
-The **register-array memories**. The data RAM alone (512 × 32 = 16 K flops) is
-about 0.33 mm², and the instruction memory — currently constant-folded to a
-combinational ROM because the bootloader is disabled in this build — accounts
-for much of the remaining logic. The core and peripherals are comparatively
-small.
+1. **The register-array data RAM** (512 × 32 = 16 K flops) is ~0.80 mm² of
+   the 1.56 mm² — over half.
+2. **The instruction memory** is a combinational ROM in this build (the
+   bootloader is disabled), so it is a large mux in the 0.66 mm² of logic.
 
-A note on SRAM: the SKY130 1 KiB / 2 KiB SRAM macros are **190,713 µm²** and
-**284,538 µm²** (0.19 / 0.28 mm²). For these small sizes SRAM is only
-*marginally* denser than flops, so SRAM alone is not a silver bullet — the
-memories have to be **right-sized** first.
+The IHP **SRAM macros are ~10× denser than flops** at these sizes:
+
+| Macro | Size | Area |
+|---|---|---|
+| `RM_IHPSG13_1P_512x32_c2` | 2 KiB | 0.080 mm² |
+| `RM_IHPSG13_1P_256x32_c2` | 1 KiB | 0.049 mm² |
+
+So moving the data RAM to a 2 KiB SRAM saves **~0.72 mm²** by itself, and a
+synchronous instruction SRAM removes both the ROM mux and the fetch-critical
+path. That is the Phase 5 plan.
 
 ## Actions for Phase 5
 
-1. **Right-size the data RAM.** 2 KiB is generous; the largest firmware (CAN)
-   needs < 1 KiB. Halving or quartering it saves 0.16–0.25 mm².
-2. **Decide the instruction memory.** The bootloader (runtime
-   reprogrammability, which the competition requires) needs it writable.
-   Compare flops vs an SRAM macro at the final size.
-3. **Shrink the core.** RV32E (16 registers) trims the register file and the
+1. **Move the memories to IHP SRAM macros** (synchronous), and pipeline the
+   fetch path. This is the single biggest win.
+2. **Right-size the data RAM** — the largest firmware (CAN) needs < 1 KiB.
+3. **Trim the core to RV32E** (16 registers) to shrink the register file and
    read muxes.
-4. **Re-run this check** after each change, and only then attempt the full
-   LibreLane place-and-route.
+4. **Re-run this check** after each change, then attempt full place-and-route.
 
 ## Takeaway
 
-The architecture is sound, but the **memories must be right-sized and the
-core trimmed** before tape-out. This is exactly the Phase 5 checkpoint the
-roadmap called for, and it is better to learn it now than at the deadline.
+The architecture is sound, but at ~2.2× the IHP area budget the **register-
+array memories must become SRAM macros** and the core should be trimmed before
+tape-out. Finding this now, at the Phase 5 checkpoint, is exactly why the
+check exists.
