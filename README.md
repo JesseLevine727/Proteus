@@ -1,7 +1,7 @@
 # Proteus
 
-**An open-source, firmware-defined protocol emulator ASIC — a tiny RISC-V
-micro-core that becomes any hardware protocol.**
+**An open-source, bidirectional protocol engine ASIC — a tiny RISC-V micro-core
+that becomes any hardware protocol, and can listen to one too.**
 
 Proteus is an entry to the [Jane Street protocol emulator ASIC
 competition](https://blog.janestreet.com/protocol-emulator-asic-competition/).
@@ -37,6 +37,18 @@ Protocols are programs. UART, SPI, I2C, CAN, JTAG and anything else are all
 firmware — including protocols the chip was never designed for, loaded at run
 time through the bootloader.
 
+## Why it stands out
+
+1. **Bidirectional** — the same pins **emulate** a bus *and* **capture and
+   decode** one (timestamped analyzer mode), for hardware debugging and
+   reverse engineering. The PIO/PRU references are transmit/receive engines.
+2. **Generality, proven** — 1-Wire, nothing like the named protocols, runs in
+   firmware with no RTL change.
+3. **Verification as a methodology** — formal properties, constrained-random
+   fuzzing, differential Hardcaml↔Verilator co-simulation, AI-assisted test
+   generation and FPGA-to-ASIC validation, in a reproducible evidence bundle.
+   See [`docs/verification.md`](docs/verification.md).
+
 ## Current status
 
 **Phase 3 complete — Reflexes.**
@@ -53,14 +65,20 @@ checked on a two-node wired-AND bus. I2C includes an open-drain master (write
 and read) and a slave at address 0x50.
 
 Implemented so far: RV32I + Zicsr + traps, interrupts, timers, a debug UART, a
-hardware bootloader, a C toolchain, the pin subsystem, the timing ISA, and the
-four protocol stacks. 15 self-checking tests; generated Verilog is
-Verilator-lint clean.
+hardware bootloader, a C toolchain, the pin fabric, the timing ISA, the four
+protocol stacks, and the 1-Wire generality proof. **21 self-checking tests**;
+generated Verilog is Verilator-lint clean.
 
-See [`docs/roadmap.md`](docs/roadmap.md) for the phased plan,
+**Known blocker:** an early synthesis check on the real target (IHP SG13G2)
+puts the current SoC at **1.555 mm² — 2.16× the 6×4 budget**; the memories
+must move to IHP SRAM macros. See
+[`docs/synthesis-check.md`](docs/synthesis-check.md).
+
+See [`docs/roadmap.md`](docs/roadmap.md) for the risk-first phased plan,
 [`docs/architecture.md`](docs/architecture.md) for the architecture,
-[`docs/protocols.md`](docs/protocols.md) for protocol targets, and
-[`docs/isa.md`](docs/isa.md) for the implemented instruction set.
+[`docs/verification.md`](docs/verification.md) for the verification
+methodology, [`docs/protocols.md`](docs/protocols.md) for protocol targets,
+and [`docs/isa.md`](docs/isa.md) for the implemented instruction set.
 
 ## Quickstart
 

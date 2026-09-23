@@ -1,9 +1,16 @@
 # Proteus Protocol Targets
 
-Proteus is a protocol emulator: protocols are **firmware programs** on the
-RISC-V micro-core, with hardware accelerators introduced only where firmware
-cannot meet timing. This document is the single source of truth for which
-protocols we target, how they are implemented, and how each is verified.
+Proteus is a **bidirectional** protocol tool: protocols are **firmware
+programs** on the RISC-V micro-core, with protocol-agnostic primitives
+introduced only where firmware cannot meet timing. It can **emulate** a bus
+(drive it) and **analyze** one (capture and decode it) — the debugging and
+reverse-engineering use case the competition describes. This document is the
+single source of truth for which protocols we target, how they are
+implemented, and how each is verified.
+
+Both directions are firmware: the same pin fabric drives or records a bus, and
+firmware decodes the captured traffic. The capture/analyzer subsystem is a
+generic hardware primitive (Phase 6), not a protocol block.
 
 ## Matrix
 

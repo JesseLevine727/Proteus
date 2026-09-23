@@ -1,93 +1,128 @@
 # Proteus Roadmap
 
-Proteus is a **firmware-defined protocol engine**: a small, open-source ASIC
-built around a tiny custom RISC-V micro-core whose instruction set is designed
-for reading pins, writing pins, counting cycles and hitting timing precisely
-enough that real hardware protocols are implemented as *programs* rather than
-fixed logic blocks.
+Proteus is a **bidirectional, firmware-defined protocol engine**: a small,
+open-source ASIC built around a tiny custom RISC-V micro-core whose
+instruction set is designed for reading pins, writing pins, counting cycles
+and hitting timing precisely enough that real hardware protocols are
+implemented as *programs* rather than fixed logic blocks.
+
+It works in **both directions**:
+
+- **Emulate** — drive a bus, in firmware (UART, SPI, I2C, CAN, 1-Wire, JTAG).
+- **Analyze** — capture a bus with timestamps and decode it, in firmware
+  (the reverse-engineering half of the use case Jane Street describes).
 
 The chip is reprogrammable **after fabrication**, so protocols that did not
 exist when the die was taped out can be supported within its timing and I/O
 constraints.
 
-> **Research question:** How much of a general-purpose protocol emulator can be
-> built as firmware on a tiny RISC-V core, and where must hardware
-> acceleration be introduced to meet timing?
+> **Research question:** How much of a general-purpose protocol tool —
+> emulator *and* analyzer — can be built as firmware on a tiny RISC-V core,
+> and where must hardware assist be introduced to meet timing and area?
+
+## What makes this distinctive
+
+1. **Bidirectional** — emulate **and** analyze on the same pins. The PIO/PRU
+   references are transmit/receive engines; a timestamped capture subsystem
+   makes Proteus a debugging and reverse-engineering tool, which is exactly
+   the use case the competition names.
+2. **Generality, proven** — 1-Wire (nothing like the named protocols) runs in
+   firmware with no RTL change.
+3. **Verification as a methodology** — formal, constrained-random,
+   differential co-simulation, AI-assisted test generation and FPGA-to-ASIC
+   validation, bundled reproducibly. The competition explicitly rewards
+   novel verification approaches.
 
 ## Phasing principle
 
 Phases 0–3 answered *"can firmware emulate protocols?"* — **yes**. Phases 4–8
-answer *"can we actually make a chip?"* — and that is where the remaining risk
-and the deadline live. So the plan is **risk-first**:
+answer *"can we build a bulletproof chip?"* — where the remaining risk lives.
+The plan is **risk-first**:
 
-> **Fit → Flow → features → submit.**
+> **Fit → Flow → Bidirectional → Verification → Stretch → Submit.**
 
-Concretely: make the design fit the area budget (Phase 4), prove the ASIC flow
-end-to-end on the target process (Phase 5), *then* add breadth (Phase 6) and
-stretch goals (Phase 7), and finish with evidence and submission (Phase 8).
-Feature work is deliberately gated on area and on the flow working.
+Feature work is gated on area and on the flow working. Verification is a
+**first-class, gated track at every phase**, not a cleanup step.
 
 ## Design constraints
 
 | Constraint | Value | Consequence |
 |---|---|---|
 | Process | IHP SG13G2 / CMOS5L via Tiny Tapeout | `ttihp-verilog-template` (`cmos5l`) |
-| Area | 6×4 tiles ≈ 0.72 mm² (8×4 may become available, +30 %) | **Measured: the current SoC is 2.16× over** — see below |
-| Pins | 24 signals: `ui_in[7:0]`, `uo_out[7:0]`, `uio[7:0]` | Ethernet needs MII-to-PHY; CAN needs an external transceiver (2 pins) |
-| Clock | ~25–100 MHz achievable at this node | MII at 10 Mbit (2.5 MHz) is comfortable |
+| Area | 6×4 tiles ≈ 0.72 mm² (8×4 may add ~30 %) | **Measured: current SoC is 2.16× over** |
+| Pins | 24 signals: `ui_in[7:0]`, `uo_out[7:0]`, `uio[7:0]` | Ethernet needs MII-to-PHY; CAN needs a transceiver (2 pins) |
+| Clock | ~25–100 MHz at this node | MII at 10 Mbit (2.5 MHz) is comfortable |
 | Deadline | 18 January 2027 | Risk-weighted schedule below |
 
 **Area reality (measured, IHP SG13G2):** 90,492 cells, 18,193 flip-flops,
-**1.555 mm²** — 2.16× the budget. The register-array data RAM alone is
-~0.80 mm². IHP **SRAM macros are ~10× denser** (2 KiB = 0.080 mm²), so the
-memories must move to SRAM macros. Full numbers:
-[`synthesis-check.md`](synthesis-check.md).
+**1.555 mm²** — 2.16× budget. IHP **SRAM macros are ~10× denser** (2 KiB =
+0.080 mm²). Full numbers: [`synthesis-check.md`](synthesis-check.md).
 
 ## Architecture at a glance
 
 ```
-                       PROTEUS
-   +---------------------------------------------------+
-   |  RV32E core  (custom pin/timing instructions)      |
-   |  - cycle counter CSR, fast IRQ                     |
-   +-------------------------+-------------------------+
-                             |
-                    +--------+--------+
-                    |  Memory system  |   <-- IHP SRAM macros (Phase 4)
-                    |  I-SRAM | D-SRAM |
-                    +--------+--------+
-                             |
-   +-------------------------+-------------------------+
-   |                  I/O subsystem                    |
-   |  GPIO (24 pins, atomic set/clr/toggle, wait/edge) |
-   |  Timers / clock dividers / interrupt controller   |
-   +-------------------------+-------------------------+
-                             |
-   +-------------------------+-------------------------+
-   |   Protocol-agnostic primitives (only if they fit) |
-   |   DMA | configurable CRC | shift/FIFO | Manchester|
-   +---------------------------------------------------+
+                          PROTEUS
+   +--------------------------------------------------------+
+   |  RV32E core                                            |
+   |   - RV32I subset + Zicsr + machine traps/MRET          |
+   |   - custom-0 ISA:  DELAY | PIN_WAIT | PIN_EDGE         |
+   |   - mcycle/minstret, timer & pin-edge interrupts       |
+   +---------------------------+----------------------------+
+                               |
+                     +---------+---------+
+                     |    Memories       |  I-SRAM (writable)
+                     | (IHP SRAM macros) |  D-SRAM + capture buffer
+                     +---------+---------+
+                               |
+   +---------------------------+----------------------------+
+   |  Programmable pin fabric (24 pins)                     |
+   |   atomic set/clr/toggle, output-enable, input,         |
+   |   latched edges, per-pin IRQ, open-drain               |
+   |   + CAPTURE: trigger | timestamp | transition log      |  <-- analyze
+   +---------------------------+----------------------------+
+                               |
+   +---------------------------+----------------------------+
+   |  Support: timer | debug UART | hardware bootloader     |
+   +---------------------------+----------------------------+
+   |  Protocol-agnostic primitives (Phase 7, area-gated):   |
+   |   DMA | configurable CRC | shift/FIFO | Manchester     |
+   +--------------------------------------------------------+
 ```
 
-Protocols are firmware: UART, SPI, I2C, CAN, 1-Wire and JTAG are programs.
-There is **no hardware protocol block** on the emulation path. Accelerators
-are generic primitives that firmware *composes* into high-speed protocols —
-added only where timing demands **and** area allows.
+There is **no hardware protocol block** on the emulation path. The only
+protocol-ish hardware is the *debug* UART (console/boot channel).
 
 ## Cross-cutting tracks
 
-1. **Verification** — a first-class deliverable, gated at every phase, never
-   retrofitted. The competition explicitly rewards verification methodology.
-   - Cycle-accurate Hardcaml unit tests; **21 self-checking tests today**
-   - **Golden models** in OCaml for every protocol (UART/SPI/I2C/CAN/1-Wire)
-   - **Two-node** wired-AND simulations (CAN arbitration, bit stuffing)
-   - **Formal** properties (`hardcaml_verify` / SymbiYosys) for state
-     machines and protocol invariants
-   - RTL co-simulation (Hardcaml vs Verilator) before hardening
-2. **Generality** — evidence that protocols the chip was never designed for
-   run in firmware with no RTL change (1-Wire; see below).
-3. **Tooling** — assembler/loader, firmware build, Tiny Tapeout hardening flow.
-4. **Documentation** — architecture, ISA reference, verification records.
+### Track V — Verification (first-class, gated)
+
+Every phase adds evidence; nothing is retrofitted. See
+[`verification.md`](verification.md) for the full methodology.
+
+- **Unit & golden models** — cycle-accurate Hardcaml tests; independent OCaml
+  models for every protocol (**21 self-checking tests today**).
+- **Differential co-simulation** — Hardcaml ↔ Verilator must agree on every
+  test vector.
+- **Formal** — `hardcaml_verify` / SymbiYosys properties for the pin fabric,
+  the wait/delay stall logic, the capture FSM, the TAP FSM and CSR/trap
+  logic.
+- **Constrained-random** — protocol fuzzers against golden models; seeded and
+  reproducible.
+- **AI-assisted** — LLM-generated test cases, invariants and protocol models,
+  with human review; the method and its limits documented.
+- **FPGA-to-ASIC** — validate the synthesized design on a PYNQ-Z1 with real
+  pins and real peripherals *before* the ASIC flow.
+- **Evidence bundle** — hash-checked, reproducible from the repository alone.
+
+### Track G — Generality
+
+A protocol the chip was **not** designed for, in firmware, no RTL change.
+**1-Wire done** (`firmware/onewire.c`).
+
+### Track T — Tooling & docs
+
+Assembler/loader, firmware build, Tiny Tapeout hardening, architecture/ISA
+references.
 
 ## Phases
 
@@ -97,105 +132,95 @@ whose failures cannot be isolated.
 
 ### Phase 0 — Foundations ✓
 
-Reproducible OCaml/Hardcaml toolchain; first verified design (UART TX,
-decoded back to a byte in simulation).
+Reproducible OCaml/Hardcaml toolchain; first verified design (UART TX).
 
 ### Phase 1 — First Light ✓
 
-A minimal RV32I core executes hand-assembled firmware and drives a pin; the
-firmware bit-bangs an 8N1 UART frame, decoded back in cycle-accurate
-simulation.
+Minimal RV32I core drives a pin from firmware; bit-banged UART decoded back in
+cycle-accurate simulation.
 
 ### Phase 2 — Voice ✓
 
-Full RV32I + Zicsr + machine traps + MRET; `mcycle`/`minstret`; machine
-software/timer/external interrupts; a debug UART; a **hardware bootloader**
-that loads the writable instruction RAM at run time; and a
-`riscv32-unknown-elf-gcc` toolchain. Compiled C prints over the UART, direct
-and booted.
+Full RV32I + Zicsr + traps + MRET; counters and interrupts; debug UART;
+hardware bootloader loading the writable instruction RAM; C toolchain.
+Compiled C prints over the UART, direct and booted.
 
 ### Phase 3 — Reflexes ✓
 
-Programmable I/O and precise timing; protocols in firmware.
-
-- **Pin subsystem** — 24-pin GPIO with atomic set/clear/toggle, output-enable,
-  latched edges and per-pin interrupts (`lib/pins.ml`).
-- **Timing ISA** — `DELAY`, `PIN_WAIT`, `PIN_EDGE` custom instructions with a
-  stall mechanism (`lib/cpu.ml`).
-- **Protocols in firmware** — UART (TX/RX, parity, CTS flow control), SPI
-  (master + slave), I2C (master write/read + slave), CAN (TX with stuffing,
-  CRC-15, arbitration, error confinement; RX with de-stuffing, CRC, ACK —
-  timing loop in hand-written assembly).
-- **Generality proof** — **1-Wire** (`firmware/onewire.c`): single-wire,
-  open-drain, microsecond timing, nothing like the named protocols, running
-  on the same pin subsystem and timing ISA with no RTL change.
-
-**Exit met:** all of the above verified against independent OCaml golden
-models. **21 self-checking tests.** Simulation-only; no FPGA required.
+Pin fabric (atomic ops, edges, per-pin IRQ), timing ISA (`DELAY`/`PIN_WAIT`/
+`PIN_EDGE`), and protocols in firmware: UART (TX/RX, parity, flow control),
+SPI (master + slave), I2C (master write/read + slave), CAN (TX with stuffing,
+CRC-15, arbitration, error confinement; RX with de-stuff, CRC, ACK), and the
+1-Wire generality proof. **21 self-checking tests.** Simulation-only.
 
 ### Phase 4 — Fit *(critical path)*
 
-**Goal:** make the design fit the IHP 6×4 area budget with headroom.
+**Goal:** make the design fit the IHP 6×4 budget **including the capture
+subsystem**, with headroom.
 
-- Move instruction and data memories to **IHP SRAM macros** (`RM_IHPSG13_*`),
-  synchronous, and **pipeline the fetch path** (also removes the large
+- Move instruction and data memories to **IHP SRAM macros**
+  (`RM_IHPSG13_*`), synchronous, and **pipeline the fetch path** (removes the
   combinational ROM mux).
-- **Right-size the data RAM** — the largest firmware (CAN) needs < 1 KiB.
-- **Trim the core to RV32E** (16 registers).
-- Re-run the area check after each change.
+- Add the **capture buffer** to the memory budget.
+- **Right-size the data RAM**; **trim the core to RV32E**.
 
-**Exit:** the mapped area has **≥ 20 % headroom** under 0.72 mm², and all 21
-simulation tests still pass. **Evidence:** `synthesis-check.md` updated.
+**Exit:** ≥ 20 % area headroom under 0.72 mm²; all 21 tests pass.
+**Verification gate:** area report + full regression.
 
-### Phase 5 — Flow *(critical path)*
+### Phase 5 — Flow & silicon validation *(critical path)*
 
-**Goal:** prove the end-to-end ASIC flow on the real process.
+**Goal:** prove the end-to-end flow and validate on real silicon-like
+hardware.
 
-- Integrate the Tiny Tapeout **`cmos5l`** template: `info.yaml`, tile size,
-  the 24-pin mapping, the GDS GitHub Action.
-- Run **LibreLane**: synthesis → floorplan → placement → CTS → routing → STA
-  → DRC/LVS, using the locally installed IHP PDK.
-- **De-risk by running a minimal configuration end-to-end first**, then the
-  full design.
+- **FPGA-to-ASIC:** synthesize the design onto a **PYNQ-Z1**, drive real pins,
+  run UART/SPI/I2C on real hardware, measure achievable clock.
+- Integrate the Tiny Tapeout **`cmos5l`** template (`info.yaml`, tile size,
+  24-pin mapping, GDS Action).
+- Run **LibreLane** end-to-end on the local IHP PDK: synth → floorplan →
+  place → CTS → route → STA → DRC/LVS. **Minimal config first**, then full.
 
-**Exit:** a **GDSII** produced, DRC/LVS clean, and the GDS Action passing in
-CI. Never having run the flow is itself a top risk — this phase retires it.
+**Exit:** FPGA bring-up evidence **and** a DRC/LVS-clean **GDSII** with a
+passing GDS Action.
+**Verification gate:** co-simulation (Hardcaml ↔ Verilator) + post-synthesis
+equivalence.
 
-### Phase 6 — Breadth
+### Phase 6 — Bidirectional
 
-**Goal:** the remaining named protocol and any primitives that fit.
+**Goal:** Proteus captures and decodes, not just drives.
 
-- **JTAG** — TAP target (16-state FSM, IR/DR, IDCODE/BYPASS/BSR) and/or host;
-  **formal verification** of the TAP FSM.
-- **Protocol-agnostic primitives** — DMA, configurable CRC, shift/FIFO —
-  **only if Phase 4/5 leave area**.
+- **Capture/analyzer subsystem** — trigger (pin pattern/edge), cycle
+  timestamp, transition log into the capture buffer, overflow handling.
+- **Analyzer firmware** — decode captured traffic into protocols (start with
+  UART/SPI/I2C, extend to CAN).
+- **JTAG** — TAP target (16-state FSM, IR/DR, IDCODE/BYPASS/BSR) and/or host.
 
-**Exit:** JTAG verified (formal + state traces); area still fits.
+**Exit:** capture a live bus and decode it in firmware; JTAG verified.
+**Verification gate:** **formal** proofs of the capture FSM and TAP FSM;
+constrained-random capture tests.
 
 ### Phase 7 — Stretch: the Ether
 
-**Goal:** 10 Mbit Ethernet, built as firmware on the primitives.
+**Goal:** 10 Mbit Ethernet, built as firmware on protocol-agnostic primitives.
 
-- Preamble/SFD, FCS via the CRC unit, address filtering, MII framing, DMA
-  moving frames. **No hardware MAC.**
-- Optional Manchester line code as a generic primitive.
+- Preamble/SFD, FCS via the configurable CRC, address filtering, MII framing,
+  DMA moving frames. **No hardware MAC.**
+- Optional generic Manchester line code.
 
-**Exit:** frames transmitted and received (loopback or via an MII PHY),
-verified against a reference.
+**Exit:** frames transmitted and received (loopback or MII PHY), verified
+against a reference. **Fallback:** primitives stand alone; Ethernet stays a
+firmware target.
 
-**Fallback:** the primitives stand alone as the acceleration story; Ethernet
-stays a firmware target.
+### Phase 8 — Verification campaign & submission
 
-### Phase 8 — Legacy
+**Goal:** bulletproof evidence and a submitted chip.
 
-**Goal:** reproducible, open, submitted.
+- Run the **full Track V campaign**: formal suite, constrained-random fuzz,
+  differential co-simulation, AI-assisted tests, FPGA-to-ASIC evidence.
+- Assemble the **hash-checked reproducible evidence bundle**.
+- Public repo, tagged release, submission **before 18 January 2027**.
 
-- Reproducible **verification bundle** (simulation, formal, physical evidence)
-- README, ISA reference, design writeups, waveform captures
-- Public repo, tagged and hash-checked, matching the submission
-
-**Exit:** a third party can rebuild the GDSII and re-run the verification
-suite from the repository alone; **submitted before 18 January 2027**.
+**Exit:** a third party can rebuild the GDSII and re-run the entire
+verification suite from the repository alone; submission accepted.
 
 ## Schedule (risk-weighted)
 
@@ -203,24 +228,25 @@ suite from the repository alone; **submitted before 18 January 2027**.
 |---|---|---|
 | Sep 2026 | 0–3 ✓ | Toolchain, core, protocols in firmware, generality proof |
 | Sep–Oct 2026 | **4 — Fit** | SRAM memories, pipelined fetch, RV32E, area headroom |
-| Oct 2026 | **5 — Flow** | Minimal GDSII end-to-end, then the full design |
-| Nov 2026 | 6 — Breadth | JTAG (+ primitives if they fit) |
+| Oct 2026 | **5 — Flow** | FPGA bring-up + minimal GDSII end-to-end, then full |
+| Nov 2026 | 6 — Bidirectional | Capture/analyzer + JTAG, formally verified |
 | Nov–Dec 2026 | 7 — Stretch | Ethernet on the primitives |
 | Dec 2026 | 5/4 | Hardening: timing closure, final GDS, re-run area check |
-| Jan 2027 | 8 — Legacy | Verification evidence + submission |
+| Jan 2027 | 8 — Campaign | Full verification campaign + submission |
 
-The ASIC flow starts **now** (on a minimal configuration, in parallel with
-Phase 4) rather than after all features — the flow is the biggest unknown.
+The ASIC flow and FPGA bring-up start **immediately** (minimal config, in
+parallel with Phase 4) rather than after all features.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
 | **Design 2.16× over area** | Phase 4: SRAM macros (~10× denser), pipelined fetch, RV32E, right-sizing |
-| **ASIC flow never run** | Phase 5 starts a minimal end-to-end LibreLane run immediately |
-| Timing closure at target clock | Pipeline the fetch; keep critical paths in hardware; MII at 2.5 MHz |
-| JTAG/accelerators do not fit | Area-gated: JTAG firmware first, primitives only with headroom |
-| Ethernet does not fit | Explicitly separable stretch; primitives still ship |
-| Verification debt | Evidence required at every phase exit, not retrofitted |
-| Schedule slip | Stretch goals separable; the core deliverable (fit + flow + submission) is protected |
+| **ASIC flow never run** | Phase 5 starts a minimal LibreLane run immediately; FPGA bring-up first |
+| Capture subsystem does not fit | Budgeted in Phase 4; capture is a small buffer + FSM |
+| Timing closure at target clock | Pipeline the fetch; MII at 2.5 MHz |
+| Formal properties too hard | Start with the small blocks (stall logic, capture FSM, TAP FSM) |
+| Ethernet does not fit | Explicitly separable stretch |
+| Verification debt | Gated at every phase; the campaign is a phase, not an afterthought |
+| Schedule slip | Stretch separable; the core deliverable (fit + flow + submission) protected |
 | 8×4 tiles unavailable | Design to 6×4; treat 8×4 as headroom if it lands |

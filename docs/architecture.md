@@ -6,12 +6,12 @@ the phase gates.
 
 ## 1. Overview
 
-Proteus is a small System-on-Chip whose purpose is to **emulate hardware
-protocols in firmware**. The central component is a custom RISC-V micro-core
-with an instruction set tuned for pin access and cycle-accurate timing. Around
-it sit small memories, a memory-mapped I/O subsystem, and (from Phase 5) a set
-of composable hardware accelerators for the cases where firmware cannot meet
-timing.
+Proteus is a small System-on-Chip whose purpose is to **emulate *and* analyze
+hardware protocols in firmware** — a bidirectional tool. The central component
+is a custom RISC-V micro-core with an instruction set tuned for pin access and
+cycle-accurate timing. Around it sit small memories (IHP SRAM macros), a
+programmable pin fabric with a **capture/analyzer** subsystem, and — only
+where timing and area allow — protocol-agnostic primitives.
 
 ## 2. Core
 
@@ -28,10 +28,12 @@ timing.
   ECALL, EBREAK) with MRET are **implemented** (Phase 2); so are machine
   software/timer/external interrupts. See [`isa.md`](isa.md).
 
-### 2.2 Protocol-oriented extensions (Phase 3)
+### 2.2 Protocol-oriented extensions ✓ (Phase 3)
 
 Custom instructions use RISC-V custom opcodes and are added only where they
-remove a real bottleneck. **None are implemented yet.**
+remove a real bottleneck. All three are **implemented**, with a stall
+mechanism that holds the PC, keeps `mcycle` running and retires the
+instruction exactly once.
 
 | Instruction | Purpose |
 |---|---|
@@ -57,11 +59,11 @@ memory-mapped.
 | Region | Base | Implemented | Notes |
 |---|---|---|---|
 | Instruction RAM | `0x0000_0000` | ✓ (256 words) | writable by the bootloader; also readable on the data bus so firmware can copy initialised data |
-| Data RAM | `0x1000_0000` | ✓ (64 words) | byte-writable |
-| GPIO | `0x2000_0000` | ✓ | 8-bit output register |
+| Data RAM | `0x1000_0000` | ✓ (512 words) | byte-writable |
+| Pin fabric | `0x2000_0000` | ✓ | 24 pins: out/oe/in, atomic set/clr/toggle, edges, IRQ enable/pending |
 | Machine timer | `0x3000_0000` | ✓ | `mtime` / `mtimecmp` |
-| Interrupt controller | `0x4000_0000` | — | pin-edge sources (Phase 3) |
-| Accelerators | `0x5000_0000` | — | DMA / CRC / shift / FIFO / Manchester (Phase 5, protocol-agnostic) |
+| Capture / analyzer | `0x4000_0000` | ⬜ Phase 6 | trigger, timestamp, transition log |
+| Accelerators | `0x5000_0000` | ⬜ Phase 7 | DMA / CRC / shift / FIFO / Manchester (protocol-agnostic) |
 | UART (debug) | `0x6000_0000` | ✓ | 8N1 console + boot channel |
 | HALT | `0x7000_0000` | ✓ | write-only; freezes the core |
 
@@ -70,12 +72,30 @@ accelerators to appear in later phases without disturbing earlier addresses.
 
 ## 4. I/O subsystem
 
+### 4.1 Pin fabric ✓ (Phase 3)
+
 - **24 pins**: `ui_in[7:0]` (inputs), `uo_out[7:0]` (outputs), `uio[7:0]`
   (bidirectional with output-enable).
-- Per-pin capabilities: read, atomic set/clear/toggle, output-enable control,
-  edge detection, and timestamped capture (Phase 4 analyzer mode).
+- Per-pin: read, atomic set/clear/toggle, output-enable control, latched
+  rising/falling edges, and per-pin interrupt enable/pending.
 - Open-drain emulation for I2C by driving low and reading back.
 - All I/O is memory-mapped; no protocol is hardwired.
+
+### 4.2 Capture / analyzer ⬜ (Phase 6)
+
+This is what makes Proteus **bidirectional**: the same pins that drive a bus
+can record one.
+
+- **Trigger** — arm on a pin pattern or edge.
+- **Timestamp** — a cycle counter per captured event.
+- **Transition log** — record pin changes (and cycles since the last change)
+  into a capture buffer, with overflow handling.
+- **Capture buffer** — a small SRAM region, budgeted in Phase 4.
+
+Firmware reads the buffer and **decodes** it into protocols, so Proteus can
+listen to a bus it does not control — the reverse-engineering half of the
+competition's use case. Verified with a **formal** proof of the capture FSM
+(no lost events within the documented rate; buffer bounds respected).
 
 ## 5. Accelerators (planned, Phase 5+)
 
