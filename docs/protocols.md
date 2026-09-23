@@ -17,7 +17,12 @@ protocols we target, how they are implemented, and how each is verified.
 | JTAG | 4 (TCK/TMS/TDI/TDO) | ≤ ~10 MHz | firmware host and/or TAP target | 4 | formal TAP FSM + state traces |
 | SWD | 2 (SWCLK/SWDIO) | ≤ ~10 MHz | firmware | later | transaction traces |
 | PS/2 | 2 (CLK/DATA) | ~10–16 kHz | firmware | later | device model |
-| Ethernet 10BASE-T | MII (~12) + external PHY | 10 Mbit/s | **hardware MAC** | 6 | loopback / MII PHY + reference frames |
+| Ethernet 10BASE-T | MII (~12) + external PHY | 10 Mbit/s | firmware on generic primitives | 6 | loopback / MII PHY + reference frames |
+| **1-Wire** | 1 (open-drain) | ~16 kbit/s (µs timing) | firmware | 3 | device model (reset/presence/read) |
+
+1-Wire is deliberately **not** one of the named protocols. Implementing it in
+firmware with no RTL change is the direct demonstration of the competition's
+requirement to *support new protocols after fabrication*.
 
 ## Pin budget
 

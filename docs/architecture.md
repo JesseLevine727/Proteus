@@ -61,8 +61,7 @@ memory-mapped.
 | GPIO | `0x2000_0000` | ✓ | 8-bit output register |
 | Machine timer | `0x3000_0000` | ✓ | `mtime` / `mtimecmp` |
 | Interrupt controller | `0x4000_0000` | — | pin-edge sources (Phase 3) |
-| Accelerators | `0x5000_0000` | — | shift / FIFO / DMA / CRC (Phase 5) |
-| CAN controller | `0x5800_0000` | — | CAN 2.0B registers (Phase 6) |
+| Accelerators | `0x5000_0000` | — | DMA / CRC / shift / FIFO / Manchester (Phase 5, protocol-agnostic) |
 | UART (debug) | `0x6000_0000` | ✓ | 8N1 console + boot channel |
 | HALT | `0x7000_0000` | ✓ | write-only; freezes the core |
 
@@ -80,27 +79,27 @@ accelerators to appear in later phases without disturbing earlier addresses.
 
 ## 5. Accelerators (planned, Phase 5+)
 
-Introduced only when firmware misses timing:
+The competition's thesis is that protocols are firmware, so the accelerators
+are deliberately **protocol-agnostic primitives** that firmware composes —
+never protocol blocks:
 
-- **Shift engine** — bit-serial TX/RX with programmable clock division
-- **FIFOs** — decouple firmware from wire timing
-- **DMA** — memory-to-memory and memory-to-peripheral
-- **CRC32** — Ethernet FCS and general checksums
-- **Manchester** — only if we choose the PHY-less Ethernet path
-- **CAN 2.0B controller** — bit timing, bit stuffing, CRC-15, error states and
-  mailboxes, for full-rate CAN (see below)
+- **DMA** — memory-to-memory and memory-to-peripheral transfers
+- **CRC unit** — configurable polynomial (CRC32 for Ethernet, CRC15 for CAN)
+- **Shift/FIFO engine** — generic bit/byte serialisation with clock division
+- **Manchester line code** — a generic encoder/decoder (a line code, not a
+  protocol)
+
+There is **no hardware UART/SPI/I2C/CAN/MAC block** on the emulation path.
+Firmware on top of these primitives implements Ethernet, and CAN stays
+firmware throughout.
 
 ## 5.1 CAN bus
 
 CAN is a differential, multi-master bus with dominant/recessive signalling.
-Proteus supports it in two tiers, consistent with the firmware-first thesis:
-
-- **Firmware CAN (Phase 3)** — up to ~250 kbit/s, built from the programmable
-  I/O and timing primitives. No dedicated hardware, so it works on any pin
-  pair and demonstrates the reconfigurability claim.
-- **Hardware CAN 2.0B controller (Phase 6)** — full rate (≤1 Mbit/s), with
-  prescaler/bit-timing, bit stuffing, CRC-15, ACK, error counters and states
-  (error-active/passive/bus-off), acceptance filtering and TX/RX mailboxes.
+Proteus supports it entirely in **firmware** (Phase 3): transmit with bit
+stuffing, CRC-15, arbitration and error confinement, and receive with SOF
+detection, de-stuffing, CRC checking and ACK. No dedicated hardware, so it
+works on any pin pair and demonstrates the reconfigurability claim.
 
 The analog layer is external: 2 pins (`CAN_TX`, `CAN_RX`) connect to a
 transceiver (SN65HVD230, TJA1050 or MCP2551) driving the differential pair.

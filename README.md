@@ -28,12 +28,14 @@ firmware  ──►  RV32 micro-core  ──►  memory-mapped I/O  ──►  2
   guidance).
 - **I/O** — all 24 Tiny Tapeout pins, memory-mapped with atomic set/clear/
   toggle, edge detection and capture.
-- **Accelerators** — added only where firmware misses timing: shift engine,
-  FIFOs, DMA, CRC32, 10 Mbit Ethernet via MII to an external PHY, and a
-  hardware CAN 2.0B controller.
+- **Accelerators** — **protocol-agnostic primitives** only: DMA, a
+  configurable CRC unit, a generic shift/FIFO engine and a Manchester line
+  code. There is no hardware UART/SPI/I2C/CAN/MAC block; firmware composes
+  the primitives into protocols (including Ethernet).
 
-Protocols are programs. UART, SPI, I2C, PS/2, SWD, JTAG and low-speed CAN are
-all firmware; full-rate Ethernet and CAN get area-gated hardware assist.
+Protocols are programs. UART, SPI, I2C, CAN, JTAG and anything else are all
+firmware — including protocols the chip was never designed for, loaded at run
+time through the bootloader.
 
 ## Current status
 

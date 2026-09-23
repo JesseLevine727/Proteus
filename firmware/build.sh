@@ -39,3 +39,4 @@ build spi_slave spi_slave.c
 build uart_tx_p uart_tx_p.c
 build uart_rx_p uart_rx_p.c
 build can_err can_err.c
+build onewire onewire.c

@@ -200,29 +200,43 @@ real TAP; TAP FSM formally verified.
 area, leave room for clock-tree buffers and routing. *A design that
 synthesizes small can still fail to route.*
 
-### Phase 6 — The Ether and the Wire (stretch)
+### Phase 6 — Primitives and the Ether (stretch)
 
-**Goal:** 10 Mbit Ethernet and a hardware CAN 2.0B controller.
+**Goal:** protocol-agnostic hardware primitives that firmware *composes* into
+high-speed protocols, and a 10 Mbit Ethernet demonstration built on them.
 
-Ethernet:
-- Digital 10BASE-T MAC: preamble/SFD, FCS (CRC32), address filtering
-- **MII to an external PHY** (2.5 MHz TX/RX clock), PHY does Manchester
-- RX/TX buffering via DMA/FIFO from Phase 5
+The competition's thesis is that protocols are firmware, so the accelerators
+are **not protocol blocks**. They are generic primitives:
 
-CAN:
-- Hardware **CAN 2.0B controller** for full-rate (up to 1 Mbit/s) operation:
-  bit-timing/prescaler, bit stuffing, CRC-15, ACK, error counters and states
-  (error-active/passive/bus-off), acceptance filtering, TX/RX mailboxes
-- 2 pins (`CAN_TX`/`CAN_RX`) to an external transceiver (e.g. SN65HVD230,
-  TJA1050, MCP2551)
+- **DMA** — memory-to-memory and memory-to-peripheral transfers
+- **CRC unit** — configurable polynomial (CRC32 for Ethernet, CRC15 for CAN)
+- **Shift/FIFO engine** — generic bit/byte serialisation with clock division
+- **Manchester line code** — a generic encoder/decoder (a line code, not a
+  protocol)
 
-**Exit:** real Ethernet frames transmitted and received (loopback or via an
-MII PHY) and real CAN frames exchanged on a bus, both verified against a
-reference.
+Ethernet is then **firmware on top of the primitives**: preamble/SFD, FCS via
+the CRC unit, address filtering and MII framing, with DMA moving frames.
+There is **no hardware MAC and no hardware CAN controller** — CAN stays
+firmware, as proved in Phase 3.
 
-**Fallback:** these are **separable and area-gated**. If the Phase 5 synthesis
-checkpoint shows insufficient room for both, ship whichever fits and keep the
-other as verified firmware (low-speed CAN) or a Manchester PMA on 2–4 pins.
+**Exit:** 10 Mbit Ethernet frames transmitted and received (loopback or via an
+MII PHY) by firmware driving the primitives; verified against a reference.
+
+**Fallback:** if area/timing do not allow the Ethernet demonstration, the
+primitives still stand as the acceleration story and Ethernet stays a firmware
+target.
+
+### Generality demonstration
+
+The competition's hard part is supporting **new protocols after fabrication**.
+The strongest evidence is a protocol the chip was **not** designed for,
+implemented purely in firmware with **no RTL change**.
+
+**Done:** **1-Wire** (`firmware/onewire.c`) — single-wire, open-drain,
+microsecond timing, nothing like UART/SPI/I2C/CAN. The master issues a reset,
+detects a presence pulse and reads a byte; a device model in
+`test/test_onewire.ml` answers with presence and data. It runs on the same
+pin subsystem and timing ISA as everything else.
 
 ### Phase 7 — Silicon
 
