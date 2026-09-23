@@ -196,8 +196,12 @@ real TAP; TAP FSM formally verified.
 
 **Exit:** DMA-streamed transfers at high throughput; CRC matches reference.
 
-**Checkpoint:** run the **first full synthesis** here. Measure mapped cell
-area, leave room for clock-tree buffers and routing. *A design that
+**Checkpoint — pulled forward and already run** (see
+[`synthesis-check.md`](synthesis-check.md)). The current SoC maps to
+**0.649 mm²** (SKY130 proxy) at ~90 % of the 6×4 budget *before* place-and-
+route overhead, so **it will not fit as-is**. The register-array memories
+dominate (18,193 flops = 0.364 mm²). Phase 5 must **right-size the memories**
+and **trim the core (RV32E)** before place-and-route. *A design that
 synthesizes small can still fail to route.*
 
 ### Phase 6 — Primitives and the Ether (stretch)
